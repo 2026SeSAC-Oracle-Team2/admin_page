@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}로그인 — SeSAC Admin{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <form method="post" action="/login" class="login-card">
+    <h1>SeSAC DB Admin</h1>
+    <p class="muted">관리자 비밀번호를 입력하세요</p>
+    {% if error %}<div class="flash flash-err">{{ error }}</div>{% endif %}
+    <input type="password" name="password" placeholder="비밀번호" autofocus required>
+    <button type="submit" class="btn btn-primary">로그인</button>
+  </form>
+</div>
+{% endblock %}

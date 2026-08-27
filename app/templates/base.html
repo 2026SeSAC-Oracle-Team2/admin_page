@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SeSAC Admin{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% if flash %}
+  <div class="flash flash-{{ flash[0] }}">{{ flash[1] }}</div>
+{% endif %}
+<header class="topbar">
+  <a class="brand" href="/">SeSAC <span>DB Admin</span></a>
+  <nav>
+    <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">테이블</a>
+    <a href="/sql" class="{{ 'active' if request.url.path == '/sql' else '' }}">SQL 콘솔</a>
+  </nav>
+  <form method="post" action="/logout" class="logout-form">
+    <button type="submit" class="btn btn-ghost btn-sm">로그아웃</button>
+  </form>
+</header>
+{% if db_ok is defined and not db_ok %}
+  <div class="flash flash-err">⚠️ Oracle DB에 연결할 수 없습니다. 컨테이너 상태를 확인하세요.</div>
+{% endif %}
+<main class="container">
+{% block content %}{% endblock %}
+</main>
+<script>
+// 플래시 자동 사라짐
+setTimeout(() => {
+  document.querySelectorAll('.flash').forEach(el => el.remove());
+}, 5000);
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

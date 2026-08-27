@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}테이블 — SeSAC Admin{% endblock %}
+{% block content %}
+<h1>테이블</h1>
+<div class="table-grid">
+  {% for t in tables %}
+  <a class="table-card" href="/table/{{ t.owner }}/{{ t.name }}">
+    <div class="tc-name">{{ t.name }}</div>
+    <div class="tc-owner muted">{{ t.owner }}</div>
+    <div class="tc-rows">{{ '—' if t.num_rows is none else t.num_rows ~ ' rows' }}</div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

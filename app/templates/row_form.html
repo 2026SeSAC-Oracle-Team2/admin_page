@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ '행 수정' if mode == 'edit' else '행 추가' }} — {{ table.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ '행 수정' if mode == 'edit' else '행 추가' }}</h1>
+    <div class="muted">{{ table.display_name }}</div>
+  </div>
+  <a class="btn btn-ghost" href="/table/{{ table.owner }}/{{ table.name }}">← 목록으로</a>
+</div>
+
+<form class="form-card"
+      method="post"
+      action="/table/{{ table.owner }}/{{ table.name }}/row/{{ 'update' if mode == 'edit' else 'create' }}">
+  {% if mode == 'edit' %}
+    {% for c in table.pk_columns() %}
+    <input type="hidden" name="__pk__{{ c.name }}" value="{{ values.get(c.name, '') }}">
+    {% endfor %}
+  {% endif %}
+
+  {% set form_cols = table.insertable_columns() if mode == 'create' else table.updatable_columns() %}
+  {% for c in form_cols %}
+  <div class="field">
+    <label for="f-{{ c.name }}">
+      {{ c.name }}
+      <span class="field-meta">
+        {{ c.data_type }}
+        {% if not c.nullable %}<em class="req">필수</em>{% endif %}
+        {% if c.fk_ref %}<em class="fk">FK → {{ c.fk_ref[0] }}.{{ c.fk_ref[1] }}</em>{% endif %}
+      </span>
+    </label>
+
+    {% if c.data_type.startswith('TIMESTAMP') or c.data_type == 'DATE' %}
+      <input type="datetime-local" id="f-{{ c.name }}" name="{{ c.name }}"
+             value="{{ values.get(c.name, '')[:16] if values.get(c.name) else '' }}"
+             {{ '' if c.nullable else 'required' }}>
+      <div class="hint">비워두면 NULL (자동 기록 컬럼은 보통 비워두세요)</div>
+    {% elif c.data_type in ('NUMBER', 'FLOAT', 'INTEGER') %}
+      <input type="number" step="any" id="f-{{ c.name }}" name="{{ c.name }}"
+             value="{{ values.get(c.name, '') }}"
+             {{ '' if c.nullable else 'required' }}>
+    {% else %}
+      <input type="text" id="f-{{ c.name }}" name="{{ c.name }}"
+             value="{{ values.get(c.name, '') }}"
+             {{ '' if c.nullable else 'required' }}>
+    {% endif %}
+    {% if mode == 'create' and c.data_default %}
+      <div class="hint">기본값: {{ c.data_default }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">{{ '저장' if mode == 'edit' else '추가' }}</button>
+    <a class="btn btn-ghost" href="/table/{{ table.owner }}/{{ table.name }}">취소</a>
+  </div>
+</form>
+{% endblock %}

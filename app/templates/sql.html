@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}SQL 콘솔 — SeSAC Admin{% endblock %}
+{% block content %}
+<h1>SQL 콘솔</h1>
+<p class="muted">기본은 SELECT만 허용. DML(INSERT/UPDATE/DELETE)은 체크 후 실행하세요. 스키마 소유 테이블은 <code>SPEECHAPP_USER.APP_USER</code> 처럼 소유자를 붙여야 합니다.</p>
+
+<form method="post" action="/sql" class="sql-form">
+  <textarea name="sql" rows="8" spellcheck="false" placeholder="SELECT * FROM SPEECHAPP_USER.APP_USER">{{ sql }}</textarea>
+  <div class="sql-controls">
+    <label class="chk">
+      <input type="checkbox" name="dml_allowed" value="1" {{ 'checked' if dml_allowed else '' }}>
+      DML 허용 (INSERT / UPDATE / DELETE)
+    </label>
+    <button type="submit" class="btn btn-primary">실행</button>
+  </div>
+</form>
+
+{% if error %}<div class="flash flash-err">{{ error }}</div>{% endif %}
+
+{% if affected is not none %}
+  <div class="flash flash-ok">{{ affected }}행이 적용되었습니다.</div>
+{% endif %}
+
+{% if rows is not none %}
+  <div class="data-card">
+  <table class="data">
+    <thead><tr>{% for c in columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>{% for c in columns %}<td>{{ row[c] | fmt }}</td>{% endfor %}</tr>
+      {% else %}
+      <tr><td class="empty">결과 없음</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endif %}
+{% endblock %}

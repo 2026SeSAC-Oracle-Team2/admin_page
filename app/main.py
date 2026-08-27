@@ -9,10 +9,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from . import auth, config, crud, db, meta
+from .templating import register_filters
 
 app = FastAPI(title="SeSAC Admin", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["fmt"] = _fmt_value
+register_filters(templates.env)
 
 
 # ---------- 헬퍼 ----------

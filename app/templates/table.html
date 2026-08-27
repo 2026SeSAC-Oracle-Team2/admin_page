@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ table.display_name }} — SeSAC Admin{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ table.name }}</h1>
+    <div class="muted">{{ table.owner }} 스키마 · 총 {{ total }}행</div>
+  </div>
+  <a class="btn btn-primary" href="/table/{{ table.owner }}/{{ table.name }}/row/new">+ 행 추가</a>
+</div>
+
+<form method="get" action="/table/{{ table.owner }}/{{ table.name }}" class="filter-bar">
+  <select name="search_col">
+    {% for c in table.columns %}
+      {% if c.data_type in ('VARCHAR2', 'CHAR') %}
+      <option value="{{ c.name }}" {{ 'selected' if c.name == search_col else '' }}>{{ c.name }}</option>
+      {% endif %}
+    {% endfor %}
+  </select>
+  <input type="text" name="search" value="{{ search }}" placeholder="검색어 (대소문자 무시)">
+  <input type="hidden" name="per_page" value="{{ per_page }}">
+  <button class="btn" type="submit">검색</button>
+  {% if search %}<a class="btn btn-ghost" href="/table/{{ table.owner }}/{{ table.name }}">지우기</a>{% endif %}
+</form>
+
+<div class="data-card">
+<table class="data">
+  <thead>
+    <tr>
+      {% for cn in colnames %}
+      <th {% if cn in pk_cols %}class="pk"{% endif %}>{{ cn }}{% if cn in pk_cols %} 🔑{% endif %}</th>
+      {% endfor %}
+      <th class="actions-col">작업</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      {% for cn in colnames %}
+      <td {% if cn in pk_cols %}class="pk"{% endif %}>
+        {% set fk = fk_map.get(cn) %}
+        {% if fk %}
+          <a class="fk-link" href="/table/{{ fk[0] }}/{{ fk[1] }}?{{ cn }}={{ row[cn] | urlencode }}" title="FK → {{ fk[0] }}.{{ fk[1] }}">{{ row[cn] | fmt }}</a>
+        {% else %}
+          {{ row[cn] | fmt }}
+        {% endif %}
+      </td>
+      {% endfor %}
+      <td class="actions-col">
+        <a class="btn btn-sm" href="/table/{{ table.owner }}/{{ table.name }}/row/edit?{{ row_pk_query(row) }}">수정</a>
+        <form method="post" action="/table/{{ table.owner }}/{{ table.name }}/row/delete"
+              onsubmit="return confirm('이 행을 삭제할까요?');">
+          {% for c in table.pk_columns() %}
+          <input type="hidden" name="__pk__{{ c.name }}" value="{{ row[c.name] | fmt }}">
+          {% endfor %}
+          <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="{{ colnames | length + 1 }}" class="empty">데이터가 없습니다</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="pager">
+  <div class="pager-info">
+    {{ (page-1)*per_page + 1 }}–{{ [page*per_page, total] | min }} / {{ total }}
+  </div>
+  <div class="pager-controls">
+    {% if page > 1 %}
+      <a class="btn btn-sm" href="/table/{{ table.owner }}/{{ table.name }}?{{ {'page': page-1, 'per_page': per_page, 'search_col': search_col, 'search': search} | querystring }}">← 이전</a>
+    {% endif %}
+    <span class="pager-page">{{ page }} / {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a class="btn btn-sm" href="/table/{{ table.owner }}/{{ table.name }}?{{ {'page': page+1, 'per_page': per_page, 'search_col': search_col, 'search': search} | querystring }}">다음 →</a>
+    {% endif %}
+    <select name="per_page" onchange="location.href='/table/{{ table.owner }}/{{ table.name }}?'+new URLSearchParams({per_page: this.value, search_col: '{{ search_col }}', search: '{{ search }}'}).toString()">
+      {% for ps in page_sizes %}
+      <option value="{{ ps }}" {{ 'selected' if ps == per_page else '' }}>{{ ps }}행씩</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+<details class="schema-box">
+  <summary>스키마 보기 ({{ table.columns | length }} 컬럼)</summary>
+  <table class="schema">
+    <thead><tr><th>컬럼</th><th>타입</th><th>NULL</th><th>기본값</th><th>비고</th></tr></thead>
+    <tbody>
+      {% for c in table.columns %}
+      <tr>
+        <td>{{ c.name }}{% if c.is_pk %} 🔑{% endif %}</td>
+        <td>{{ c.data_type }}{% if c.data_type == 'VARCHAR2' %}({{ c.data_default or '' }}){% endif %}</td>
+        <td>{{ 'Y' if c.nullable else 'N' }}</td>
+        <td>{{ c.data_default or '' }}</td>
+        <td>
+          {% if c.is_pk %}PK {% endif %}
+          {% if c.is_identity %}AUTO_INCREMENT {% endif %}
+          {% if c.fk_ref %}→ {{ c.fk_ref[0] }}.{{ c.fk_ref[1] }}{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endblock %}
