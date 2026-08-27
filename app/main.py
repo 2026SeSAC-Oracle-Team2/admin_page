@@ -54,15 +54,18 @@ def require_login(request: Request) -> None:
 
 
 def set_flash(response: RedirectResponse, message: str, kind: str = "ok") -> None:
-    response.set_cookie("flash", f"{kind}|{message}", max_age=30, httponly=True, samesite="lax")
+    # 쿠키는 latin-1 인코딩만 허용 → 한글 메시지를 URL 인코딩해서 담는다
+    from urllib.parse import quote as _q
+    response.set_cookie("flash", f"{kind}|{_q(message)}", max_age=30, httponly=True, samesite="lax")
 
 
 def pop_flash(request: Request) -> tuple[str, str] | None:
+    from urllib.parse import unquote as _uq
     raw = request.cookies.get("flash")
     if not raw or "|" not in raw:
         return None
     kind, _, msg = raw.partition("|")
-    return (kind, msg)
+    return (kind, _uq(msg))
 
 
 def base_ctx(request: Request) -> dict[str, Any]:
