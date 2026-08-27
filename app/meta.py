@@ -208,4 +208,16 @@ def friendly_error(exc: Exception) -> str:
         return "참조하는 부모 행이 없습니다. (FK 제약 — 부모를 먼저 만드세요)"
     if "ORA-12899" in s:
         return "값이 컬럼 길이를 초과했습니다."
+    if "ORA-02290" in s:
+        # CHECK 제약 위반 — 제약 이름에서 컬럼을 유추해 안내
+        import re as _re
+        m = _re.search(r"constraint \((\S+)\)", s)
+        cname = m.group(1) if m else ""
+        for col_hint, msg in [
+            ("PROBLEM_TYPE", "PROBLEM_TYPE 은 'DESCRIBE' 또는 'GUESS' 만 허용됩니다."),
+            ("HINT_TYPE", "HINT_TYPE 은 'CHOSUNG' 또는 'ASSOCIATION' 만 허용됩니다."),
+        ]:
+            if col_hint in cname.upper():
+                return msg
+        return f"허용되지 않는 값입니다. (CHECK 제약{': ' + cname if cname else ''})"
     return s

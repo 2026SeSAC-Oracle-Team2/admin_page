@@ -30,7 +30,17 @@
       </span>
     </label>
 
-    {% if c.data_type.startswith('TIMESTAMP') or c.data_type == 'DATE' %}
+    {% if c.name == 'PROBLEM_TYPE' %}
+      <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
+        <option value="DESCRIBE" {{ 'selected' if values.get(c.name) == 'DESCRIBE' else '' }}>DESCRIBE</option>
+        <option value="GUESS" {{ 'selected' if values.get(c.name) == 'GUESS' else '' }}>GUESS</option>
+      </select>
+    {% elif c.name == 'HINT_TYPE' %}
+      <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
+        <option value="CHOSUNG" {{ 'selected' if values.get(c.name) == 'CHOSUNG' else '' }}>CHOSUNG</option>
+        <option value="ASSOCIATION" {{ 'selected' if values.get(c.name) == 'ASSOCIATION' else '' }}>ASSOCIATION</option>
+      </select>
+    {% elif c.data_type.startswith('TIMESTAMP') or c.data_type == 'DATE' %}
       <input type="datetime-local" id="f-{{ c.name }}" name="{{ c.name }}"
              value="{{ values.get(c.name, '')[:16] if values.get(c.name) else '' }}"
              {{ '' if c.nullable else 'required' }}>
