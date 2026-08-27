@@ -11,6 +11,20 @@ from fastapi.templating import Jinja2Templates
 from . import auth, config, crud, db, meta
 from .templating import register_filters
 
+
+def _fmt_value(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, bytes):
+        try:
+            return v.decode("utf-8", errors="replace")
+        except Exception:
+            return repr(v)
+    if hasattr(v, "isoformat"):
+        return v.isoformat(sep=" ", timespec="seconds")
+    return str(v)
+
+
 app = FastAPI(title="SeSAC Admin", docs_url=None, redoc_url=None, openapi_url=None)
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["fmt"] = _fmt_value
@@ -27,19 +41,6 @@ class HTTPSeeOther(Exception):
 @app.exception_handler(HTTPSeeOther)
 async def see_other_handler(request: Request, exc: HTTPSeeOther):
     return RedirectResponse(url=exc.url, status_code=303)
-
-
-def _fmt_value(v: Any) -> str:
-    if v is None:
-        return ""
-    if isinstance(v, bytes):
-        try:
-            return v.decode("utf-8", errors="replace")
-        except Exception:
-            return repr(v)
-    if hasattr(v, "isoformat"):
-        return v.isoformat(sep=" ", timespec="seconds")
-    return str(v)
 
 
 def current_user(request: Request) -> bool:
