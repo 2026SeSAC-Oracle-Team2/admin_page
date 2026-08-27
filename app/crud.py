@@ -34,14 +34,14 @@ def select_rows(
     rows = db.fetch_all(
         f"""
         SELECT * FROM (
-            SELECT t.*, ROWNUM AS _rn FROM {table.fqn} t {where}
+            SELECT t.*, ROWNUM AS rn FROM {table.fqn} t {where}
             ORDER BY {_qi(table.pk_columns()[0].name) if table.pk_columns() else 'ROWNUM'}
-        ) WHERE _rn > :off AND _rn <= :off2
+        ) WHERE rn > :off AND rn <= :off2
         """,
         {**binds, "off": offset, "off2": offset + per_page},
     )
     for r in rows:
-        r.pop("_rn", None)
+        r.pop("rn", None)
     return rows, total
 
 
