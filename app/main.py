@@ -283,6 +283,32 @@ async def row_delete(request: Request, owner: str, name: str):
     return resp
 
 
+# ---------- 이미지 업로드 / 미리보기 ----------
+
+@app.post("/upload-image")
+async def upload_image(file: UploadFile):
+    """이미지를 OCI Object Storage 에 업로드하고 bucket_path 와 image_name 을 반환한다."""
+    from uuid import uuid4
+    data = await file.read()
+    ext = oci_storage.extract_ext(file.filename or "")
+    if not ext:
+        ext = "png"
+    object_key = f"content/{uuid4().hex}.{ext}"
+    content_type = file.content_type or "application/octet-stream"
+    oci_storage.upload_object(object_key, data, content_type)
+    return {
+        "bucket_path": object_key,
+        "image_name": file.filename or object_key,
+    }
+
+
+@app.get("/image-preview")
+async def image_preview(path: str):
+    """bucket_path 에 해당하는 객체의 presigned URL 을 생성해 리다이렉트한다."""
+    url = oci_storage.generate_presigned_url(path, expiry_minutes=30)
+    return RedirectResponse(url=url)
+
+
 # ---------- SQL 콘솔 ----------
 
 _SELECT_RE = None  # 아래에서 컴파일
