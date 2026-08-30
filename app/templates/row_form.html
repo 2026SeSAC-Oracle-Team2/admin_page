@@ -33,7 +33,7 @@
     {% if c.name == 'PROBLEM_TYPE' %}
       <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
         <option value="DESCRIBE" {{ 'selected' if values.get(c.name) == 'DESCRIBE' else '' }}>DESCRIBE</option>
-        <option value="GUESS" {{ 'selected' if values.get(c.name) == 'GUESS' else '' }}>GUESS</option>
+        <option value="CHOOSE" {{ 'selected' if values.get(c.name) == 'GUESS' else '' }}>CHOOSE</option>
       </select>
     {% elif c.name == 'HINT_TYPE' %}
       <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>

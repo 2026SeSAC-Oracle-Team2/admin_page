@@ -214,7 +214,7 @@ def friendly_error(exc: Exception) -> str:
         m = _re.search(r"constraint \((\S+)\)", s)
         cname = m.group(1) if m else ""
         for col_hint, msg in [
-            ("PROBLEM_TYPE", "PROBLEM_TYPE 은 'DESCRIBE' 또는 'GUESS' 만 허용됩니다."),
+            ("PROBLEM_TYPE", "PROBLEM_TYPE 은 'DESCRIBE' 또는 'CHOOSE' 만 허용됩니다."),
             ("HINT_TYPE", "HINT_TYPE 은 'CHOSUNG' 또는 'ASSOCIATION' 만 허용됩니다."),
         ]:
             if col_hint in cname.upper():
