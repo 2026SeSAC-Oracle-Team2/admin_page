@@ -4,11 +4,12 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, config, crud, db, meta
+from . import auth, config, crud, db, meta, oci_storage
 from .templating import register_filters
 
 
@@ -26,6 +27,8 @@ def _fmt_value(v: Any) -> str:
 
 
 app = FastAPI(title="SeSAC Admin", docs_url=None, redoc_url=None, openapi_url=None)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["fmt"] = _fmt_value
 register_filters(templates.env)
