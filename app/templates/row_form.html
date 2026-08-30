@@ -41,8 +41,8 @@
         <option value="CHOSUNG" {{ 'selected' if values.get(c.name) == 'CHOSUNG' else '' }}>CHOSUNG</option>
         <option value="ASSOCIATION" {{ 'selected' if values.get(c.name) == 'ASSOCIATION' else '' }}>ASSOCIATION</option>
       </select>
-    {% elif is_image_resource and c.name == 'bucket_path' %}
-      <input type="hidden" id="f-bucket_path" name="bucket_path" value="{{ values.get(c.name, '') }}">
+    {% elif is_image_resource and c.name == 'BUCKET_PATH' %}
+      <input type="hidden" id="f-BUCKET_PATH" name="{{ c.name }}" value="{{ values.get(c.name, '') }}">
       <input type="file" id="image-upload" accept="image/*">
       <button type="button" class="btn" id="upload-btn" style="margin-top:6px;">업로드</button>
       <div id="upload-status" class="hint" style="margin-top:4px;"></div>
@@ -79,7 +79,7 @@
 (function() {
   const uploadBtn = document.getElementById('upload-btn');
   const fileInput = document.getElementById('image-upload');
-  const bucketPathInput = document.getElementById('f-bucket_path');
+  const bucketPathInput = document.getElementById('f-BUCKET_PATH');
   const imageNameInput = document.getElementById('f-IMAGE_NAME');
   const preview = document.getElementById('image-preview');
   const status = document.getElementById('upload-status');
