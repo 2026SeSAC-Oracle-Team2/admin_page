@@ -200,8 +200,13 @@ async def row_new_form(request: Request, owner: str, name: str):
     table = meta.get_table(owner, name)
     if not table:
         raise HTTPSeeOther("/")
+    image_resources = []
+    if table.name in ("IMAGE_TAG", "IMAGE_HINT"):
+        image_resources = db.fetch_all(
+            "SELECT IMAGE_ID, IMAGE_NAME, BUCKET_PATH FROM SPEECHAPP_CONTENT.IMAGE_RESOURCE ORDER BY IMAGE_NAME ASC"
+        )
     ctx = base_ctx(request)
-    ctx.update(table=table, mode="create", values={}, row_pk_query="")
+    ctx.update(table=table, mode="create", values={}, row_pk_query="", image_resources=image_resources)
     return templates.TemplateResponse(request, "row_form.html", ctx)
 
 
@@ -220,11 +225,17 @@ async def row_edit_form(request: Request, owner: str, name: str):
     row = crud.fetch_row_by_pk(table, pk_vals)
     if not row:
         raise HTTPSeeOther(_back(owner, name))
+    image_resources = []
+    if table.name in ("IMAGE_TAG", "IMAGE_HINT"):
+        image_resources = db.fetch_all(
+            "SELECT IMAGE_ID, IMAGE_NAME, BUCKET_PATH FROM SPEECHAPP_CONTENT.IMAGE_RESOURCE ORDER BY IMAGE_NAME ASC"
+        )
     ctx = base_ctx(request)
     ctx.update(
         table=table, mode="edit",
         values={k: _fmt_value(v) for k, v in row.items()},
         pk_query=urlencode([(c.name, _fmt_value(row.get(c.name))) for c in table.pk_columns()]),
+        image_resources=image_resources,
     )
     return templates.TemplateResponse(request, "row_form.html", ctx)
 
@@ -239,6 +250,27 @@ async def row_create(request: Request, owner: str, name: str):
         raise HTTPSeeOther("/")
     form = await request.form()
     data = _collect_form_data(table, form, insertable_only=True)
+
+    # IMAGE_TAG: TAG_TEXT 쉼표 분리 → 여러 행 INSERT
+    if table.name == "IMAGE_TAG":
+        raw_tags = str(data.get("TAG_TEXT", ""))
+        tag_texts = [t.strip() for t in raw_tags.split(",") if t.strip()]
+        if not tag_texts:
+            resp = RedirectResponse(_back(owner, name), status_code=303)
+            set_flash(resp, "태그를 하나 이상 입력하세요.", kind="err")
+            return resp
+        image_id = data.get("IMAGE_ID")
+        resp = RedirectResponse(_back(owner, name), status_code=303)
+        try:
+            total = 0
+            for tt in tag_texts:
+                n = crud.insert_row(table, {"IMAGE_ID": image_id, "TAG_TEXT": tt})
+                total += n
+            set_flash(resp, f"{total}개 태그가 추가되었습니다.")
+        except Exception as e:
+            set_flash(resp, meta.friendly_error(e), kind="err")
+        return resp
+
     resp = RedirectResponse(_back(owner, name), status_code=303)
     try:
         n = crud.insert_row(table, data)
