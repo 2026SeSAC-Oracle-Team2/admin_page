@@ -13,28 +13,9 @@ from . import config
 _CONFIG_PATH = os.path.expanduser(config.OCI_CONFIG_PATH)
 
 
-def _get_auth_provider():
-    if os.path.exists(_CONFIG_PATH):
-        return oci.config_file_auth.ConfigFileAuthenticationDetailsProvider(
-            file_location=_CONFIG_PATH, profile_name=config.OCI_CONFIG_PROFILE
-        )
-    # fallback — instance principal / resource principal 가능하면 사용
-    try:
-        return oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
-    except Exception:
-        pass
-    try:
-        return oci.auth.signers.get_resource_principals_security_token_signer()
-    except Exception:
-        pass
-    raise RuntimeError(f"OCI config not found at {_CONFIG_PATH} and no instance principal available")
-
-
 def _client():
-    auth = _get_auth_provider()
-    return oci.object_storage.ObjectStorageClient(
-        config={"region": config.OCI_REGION}, signer=auth
-    )
+    conf = oci.config.from_file(_CONFIG_PATH, config.OCI_CONFIG_PROFILE)
+    return oci.object_storage.ObjectStorageClient(conf)
 
 
 def extract_ext(filename: str) -> str | None:
