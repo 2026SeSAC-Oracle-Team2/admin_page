@@ -24,3 +24,10 @@ OWNER_PREFIX = "SPEECHAPP"
 
 SESSION_COOKIE = "sesac_admin_session"
 SESSION_MAX_AGE = 60 * 60 * 12  # 12시간
+
+# OCI Object Storage
+OCI_NAMESPACE = os.environ.get("OCI_NAMESPACE", "cn5brhz58dgr")
+OCI_BUCKET_PROBLEMFILES = os.environ.get("OCI_BUCKET_PROBLEMFILES", "bucket-team545-problemfiles")
+OCI_CONFIG_PATH = os.environ.get("OCI_CONFIG_PATH", "~/.oci/config")
+OCI_CONFIG_PROFILE = os.environ.get("OCI_CONFIG_PROFILE", "DEFAULT")
+OCI_REGION = os.environ.get("OCI_REGION", "ap-seoul-1")
