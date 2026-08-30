@@ -47,6 +47,19 @@
       <button type="button" class="btn" id="upload-btn" style="margin-top:6px;">업로드</button>
       <div id="upload-status" class="hint" style="margin-top:4px;"></div>
       <img id="image-preview" src="" alt="preview" style="display:none;max-height:120px;margin-top:8px;border-radius:6px;border:1px solid var(--border);">
+    {% elif (table.name == 'IMAGE_TAG' or table.name == 'IMAGE_HINT') and c.name == 'IMAGE_ID' %}
+      <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
+        <option value="">이미지를 선택하세요</option>
+        {% for img in image_resources %}
+        <option value="{{ img['IMAGE_ID'] }}" data-bucket-path="{{ img['BUCKET_PATH'] }}" {{ 'selected' if values.get(c.name)|string == img['IMAGE_ID']|string else '' }}>{{ img['IMAGE_NAME'] }} (ID: {{ img['IMAGE_ID'] }})</option>
+        {% endfor %}
+      </select>
+      <img id="image-id-preview" src="" alt="" style="display:none;max-height:80px;margin-top:8px;border-radius:6px;border:1px solid var(--border);">
+    {% elif c.name == 'TAG_TEXT' and table.name == 'IMAGE_TAG' %}
+      <input type="text" id="f-{{ c.name }}" name="{{ c.name }}"
+             value="{{ values.get(c.name, '') }}"
+             {{ '' if c.nullable else 'required' }}>
+      <div class="hint">쉼표(,)로 구분하면 여러 태그를 한 번에 추가할 수 있습니다.</div>
     {% elif c.data_type.startswith('TIMESTAMP') or c.data_type == 'DATE' %}
       <input type="datetime-local" id="f-{{ c.name }}" name="{{ c.name }}"
              value="{{ values.get(c.name, '')[:16] if values.get(c.name) else '' }}"
@@ -77,6 +90,7 @@
 {% block scripts %}
 <script>
 (function() {
+  // IMAGE_RESOURCE 업로드
   const uploadBtn = document.getElementById('upload-btn');
   const fileInput = document.getElementById('image-upload');
   const bucketPathInput = document.getElementById('f-BUCKET_PATH');
@@ -84,27 +98,45 @@
   const preview = document.getElementById('image-preview');
   const status = document.getElementById('upload-status');
 
-  if (!uploadBtn) return;
+  if (uploadBtn) {
+    uploadBtn.addEventListener('click', async function() {
+      const file = fileInput.files[0];
+      if (!file) { status.textContent = '파일을 선택하세요.'; return; }
+      status.textContent = '업로드 중…';
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const resp = await fetch('/upload-image', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || '업로드 실패');
+        bucketPathInput.value = data.bucket_path;
+        if (imageNameInput && !imageNameInput.value) imageNameInput.value = data.image_name;
+        status.textContent = '업로드 완료: ' + data.bucket_path;
+        preview.src = '/image-preview?path=' + encodeURIComponent(data.bucket_path);
+        preview.style.display = 'block';
+      } catch (e) {
+        status.textContent = '오류: ' + e.message;
+      }
+    });
+  }
 
-  uploadBtn.addEventListener('click', async function() {
-    const file = fileInput.files[0];
-    if (!file) { status.textContent = '파일을 선택하세요.'; return; }
-    status.textContent = '업로드 중…';
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const resp = await fetch('/upload-image', { method: 'POST', body: formData });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.detail || '업로드 실패');
-      bucketPathInput.value = data.bucket_path;
-      if (imageNameInput && !imageNameInput.value) imageNameInput.value = data.image_name;
-      status.textContent = '업로드 완료: ' + data.bucket_path;
-      preview.src = '/image-preview?path=' + encodeURIComponent(data.bucket_path);
-      preview.style.display = 'block';
-    } catch (e) {
-      status.textContent = '오류: ' + e.message;
+  // IMAGE_ID 드롭다운 썸네일 미리보기
+  const imageIdSelect = document.getElementById('f-IMAGE_ID');
+  const imageIdPreview = document.getElementById('image-id-preview');
+  if (imageIdSelect) {
+    function updateImagePreview() {
+      const selected = imageIdSelect.options[imageIdSelect.selectedIndex];
+      const path = selected.getAttribute('data-bucket-path');
+      if (path) {
+        imageIdPreview.src = '/image-preview?path=' + encodeURIComponent(path);
+        imageIdPreview.style.display = 'block';
+      } else {
+        imageIdPreview.style.display = 'none';
+      }
     }
-  });
+    imageIdSelect.addEventListener('change', updateImagePreview);
+    if (imageIdSelect.value) updateImagePreview();
+  }
 })();
 </script>
 {% endblock %}
