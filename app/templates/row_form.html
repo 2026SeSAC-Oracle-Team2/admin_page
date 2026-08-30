@@ -18,6 +18,7 @@
     {% endfor %}
   {% endif %}
 
+  {% set is_image_resource = (table.name == 'IMAGE_RESOURCE') %}
   {% set form_cols = table.insertable_columns() if mode == 'create' else table.updatable_columns() %}
   {% for c in form_cols %}
   <div class="field">
@@ -33,13 +34,19 @@
     {% if c.name == 'PROBLEM_TYPE' %}
       <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
         <option value="DESCRIBE" {{ 'selected' if values.get(c.name) == 'DESCRIBE' else '' }}>DESCRIBE</option>
-        <option value="CHOOSE" {{ 'selected' if values.get(c.name) == 'GUESS' else '' }}>CHOOSE</option>
+        <option value="CHOOSE" {{ 'selected' if values.get(c.name) == 'CHOOSE' else '' }}>CHOOSE</option>
       </select>
     {% elif c.name == 'HINT_TYPE' %}
       <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
         <option value="CHOSUNG" {{ 'selected' if values.get(c.name) == 'CHOSUNG' else '' }}>CHOSUNG</option>
         <option value="ASSOCIATION" {{ 'selected' if values.get(c.name) == 'ASSOCIATION' else '' }}>ASSOCIATION</option>
       </select>
+    {% elif is_image_resource and c.name == 'bucket_path' %}
+      <input type="hidden" id="f-bucket_path" name="bucket_path" value="{{ values.get(c.name, '') }}">
+      <input type="file" id="image-upload" accept="image/*">
+      <button type="button" class="btn" id="upload-btn" style="margin-top:6px;">업로드</button>
+      <div id="upload-status" class="hint" style="margin-top:4px;"></div>
+      <img id="image-preview" src="" alt="preview" style="display:none;max-height:120px;margin-top:8px;border-radius:6px;border:1px solid var(--border);">
     {% elif c.data_type.startswith('TIMESTAMP') or c.data_type == 'DATE' %}
       <input type="datetime-local" id="f-{{ c.name }}" name="{{ c.name }}"
              value="{{ values.get(c.name, '')[:16] if values.get(c.name) else '' }}"
@@ -65,4 +72,39 @@
     <a class="btn btn-ghost" href="/table/{{ table.owner }}/{{ table.name }}">취소</a>
   </div>
 </form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const uploadBtn = document.getElementById('upload-btn');
+  const fileInput = document.getElementById('image-upload');
+  const bucketPathInput = document.getElementById('f-bucket_path');
+  const imageNameInput = document.getElementById('f-image_name');
+  const preview = document.getElementById('image-preview');
+  const status = document.getElementById('upload-status');
+
+  if (!uploadBtn) return;
+
+  uploadBtn.addEventListener('click', async function() {
+    const file = fileInput.files[0];
+    if (!file) { status.textContent = '파일을 선택하세요.'; return; }
+    status.textContent = '업로드 중…';
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const resp = await fetch('/upload-image', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || '업로드 실패');
+      bucketPathInput.value = data.bucket_path;
+      if (imageNameInput && !imageNameInput.value) imageNameInput.value = data.image_name;
+      status.textContent = '업로드 완료: ' + data.bucket_path;
+      preview.src = '/image-preview?path=' + encodeURIComponent(data.bucket_path);
+      preview.style.display = 'block';
+    } catch (e) {
+      status.textContent = '오류: ' + e.message;
+    }
+  });
+})();
+</script>
 {% endblock %}
