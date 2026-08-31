@@ -251,27 +251,22 @@ def _final_rel_path(real_id: int, pending_key: str) -> str:
 def _move_pending_objects(table: meta.TableInfo, real_id: int, pending_by_col: dict[str, str]) -> dict[str, str]:
     """pending tmp 객체들을 실제 image_id 위치로 이동하고 최종 rel_path 를 반환.
 
-    이동에 실패한 키는 결과에서 제외(해당 컬럼 UPDATE 생략)하고 tmp 객체는 남긴다.
+    어떤 파일이든 move가 실패하면 예외를 그대로 올린다 — 실패한 채
+    '경로만 있는' 가짜 행이 남는 것을 원천 차단하기 위함. 호출자가 롤백한다.
     """
     final: dict[str, str] = {}
     for col, pending_key in pending_by_col.items():
         dst = _final_rel_path(real_id, pending_key)
-        try:
-            oci_storage.move_object(oci_storage.build_key(pending_key), oci_storage.build_key(dst))
-            final[col] = dst
-        except Exception:
-            # copy 성공 후 delete 실패 등 부분 상황에서 dst 가 이미 존재할 수 있으므로
-            # 그 경우 경로만 채택한다(객체 존재 검사는 프록시에서 자연 노출).
-            try:
-                oci_storage.delete_object(oci_storage.build_key(pending_key))
-                final[col] = dst
-            except Exception:
-                pass
+        oci_storage.move_object(oci_storage.build_key(pending_key), oci_storage.build_key(dst))
+        final[col] = dst
     return final
 
 
 def _process_image_pendings(table: meta.TableInfo, real_id: int, form: Any) -> dict[str, str]:
-    """IMAGE_RESOURCE: hidden pending_key 들을 실제 ID 위치로 move."""
+    """IMAGE_RESOURCE: hidden pending_key 들을 실제 ID 위치로 move.
+
+    move 실패 시 예외를 그대로 올려 호출자가(생성 직후면) 행 롤백을 할 수 있게 한다.
+    """
     if table.name != "IMAGE_RESOURCE":
         return {}
     pending_by_col: dict[str, str] = {}
@@ -320,11 +315,12 @@ async def row_create(request: Request, owner: str, name: str):
                     binds,
                 )
             else:
-                # 이동 실패/업로드 없음: placeholder 가 남지 않도록 안전한 최소 경로 보정
+                # 이미지/pending이 전혀 도달하지 않은 제출 → 가짜 경로 행 방지 위해 롤백
                 db.execute_dml(
-                    "UPDATE SPEECHAPP_CONTENT.IMAGE_RESOURCE SET IMAGE_FILE_PATH = :p WHERE IMAGE_ID = :pk",
-                    {"p": f"{real_id}/{real_id}.png", "pk": real_id},
+                    "DELETE FROM SPEECHAPP_CONTENT.IMAGE_RESOURCE WHERE IMAGE_ID = :pk",
+                    {"pk": real_id},
                 )
+                raise ValueError("업로드된 이미지가 없어 행 추가가 취소되었습니다. 이미지를 먼저 업로드하세요.")
         set_flash(resp, f"{n}행이 추가되었습니다." + (f" (image_id={real_id})" if is_image and real_id else ""))
     except Exception as e:
         set_flash(resp, meta.friendly_error(e), kind="err")
