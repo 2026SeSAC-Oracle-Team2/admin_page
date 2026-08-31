@@ -36,7 +36,7 @@
       {% set accept = 'image/*' if c.name == 'IMAGE_FILE_PATH' else '.json' %}
       {# rel_path 는 서버가 pending 이동 후 확정 — hidden 은 표시용으로만 값 유지 #}
       <input type="hidden" id="f-{{ c.name }}" name="{{ c.name }}" value="{{ values.get(c.name, '') }}">
-      <input type="hidden" id="pending-{{ fkey }}" name="__pending_{{ fkey }}" value="">
+      <input type="hidden" id="pending-{{ fkey }}" name="__pending_{{ 'image' if fkey == 'file' else fkey }}" value="">
       <input type="file" id="upload-input-{{ fkey }}" accept="{{ accept }}" style="display:inline-block;">
       <button type="button" class="btn btn-sm" data-upload="{{ fkey }}" style="margin-left:6px;">업로드</button>
       <div id="upload-status-{{ fkey }}" class="hint" style="margin-top:4px;">
