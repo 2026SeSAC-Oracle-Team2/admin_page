@@ -271,6 +271,21 @@ async def row_update(request: Request, owner: str, name: str):
     return resp
 
 
+def _delete_image_artifacts(row: dict[str, Any]) -> list[str]:
+    """IMAGE_RESOURCE 행에 연결된 OCI 객체들을 삭제한다. 실패해도 계속 진행."""
+    deleted: list[str] = []
+    for key in ("IMAGE_FILE_PATH", "IMAGE_TAG_PATH", "IMAGE_HINT_PATH"):
+        path = row.get(key)
+        if not path:
+            continue
+        try:
+            oci_storage.delete_object(str(path))
+            deleted.append(str(path))
+        except Exception:
+            pass  # 이미 없거나 일시 오류 — DB 삭제는 진행
+    return deleted
+
+
 @app.post("/table/{owner}/{name}/row/delete")
 async def row_delete(request: Request, owner: str, name: str):
     require_login(request)
@@ -281,8 +296,17 @@ async def row_delete(request: Request, owner: str, name: str):
     pk_vals = _pk_from_form(table, form)
     resp = RedirectResponse(_back(owner, name), status_code=303)
     try:
+        # OCI 정리: IMAGE_RESOURCE면 삭제 전에 행을 읽어 경로 확보
+        oci_deleted: list[str] = []
+        if table.name == "IMAGE_RESOURCE":
+            row = crud.fetch_row_by_pk(table, pk_vals)
+            if row:
+                oci_deleted = _delete_image_artifacts(row)
         n = crud.delete_row(table, pk_vals)
-        set_flash(resp, f"{n}행이 삭제되었습니다.")
+        if oci_deleted:
+            set_flash(resp, f"{n}행이 삭제되었습니다. (OCI 파일 {len(oci_deleted)}건도 삭제)")
+        else:
+            set_flash(resp, f"{n}행이 삭제되었습니다.")
     except Exception as e:
         set_flash(resp, meta.friendly_error(e), kind="err")
     return resp

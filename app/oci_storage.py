@@ -40,6 +40,16 @@ def upload_object(object_key: str, file_bytes: bytes, content_type: str) -> None
     )
 
 
+def delete_object(object_key: str) -> None:
+    """bucket-team545-problemfiles 에서 객체를 삭제한다."""
+    client = _client()
+    client.delete_object(
+        namespace_name=config.OCI_NAMESPACE,
+        bucket_name=config.OCI_BUCKET_PROBLEMFILES,
+        object_name=object_key,
+    )
+
+
 def generate_presigned_url(object_key: str, expiry_minutes: int = 30) -> str:
     """Pre-Authenticated Request (PAR) 를 생성해 반환한다."""
     client = _client()
