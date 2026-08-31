@@ -31,30 +31,28 @@
       </span>
     </label>
 
-    {% if c.name == 'HINT_TYPE' %}
+    {% if is_image_resource and c.name in ('IMAGE_FILE_PATH', 'IMAGE_TAG_PATH', 'IMAGE_HINT_PATH') %}
+      {% set fkey = 'file' if c.name == 'IMAGE_FILE_PATH' else ('tags' if c.name == 'IMAGE_TAG_PATH' else 'hint') %}
+      {% set accept = 'image/*' if c.name == 'IMAGE_FILE_PATH' else '.json' %}
+      <input type="hidden" id="f-{{ c.name }}" name="{{ c.name }}" value="{{ values.get(c.name, '') }}">
+      <input type="file" id="upload-input-{{ fkey }}" accept="{{ accept }}" style="display:inline-block;">
+      <button type="button" class="btn btn-sm" data-upload="{{ fkey }}" style="margin-left:6px;">업로드</button>
+      <div id="upload-status-{{ fkey }}" class="hint" style="margin-top:4px;">
+        {% if values.get(c.name) %}현재: {{ values.get(c.name) }}{% endif %}
+      </div>
+      {% if c.name == 'IMAGE_FILE_PATH' %}
+      <img id="image-preview-slot" src="{{ '/image-preview?path=' + (values.get(c.name) | urlencode) if values.get(c.name) else '' }}" alt="preview"
+           style="{{ '' if values.get(c.name) else 'display:none;' }}max-height:120px;margin-top:8px;border-radius:6px;border:1px solid var(--border);">
+      {% endif %}
+    {% elif c.name == 'HINT_TYPE' %}
       <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
         <option value="CHOSUNG" {{ 'selected' if values.get(c.name) == 'CHOSUNG' else '' }}>CHOSUNG</option>
         <option value="ASSOCIATION" {{ 'selected' if values.get(c.name) == 'ASSOCIATION' else '' }}>ASSOCIATION</option>
       </select>
-    {% elif is_image_resource and c.name == 'BUCKET_PATH' %}
-      <input type="hidden" id="f-BUCKET_PATH" name="{{ c.name }}" value="{{ values.get(c.name, '') }}">
-      <input type="file" id="image-upload" accept="image/*">
-      <button type="button" class="btn" id="upload-btn" style="margin-top:6px;">업로드</button>
-      <div id="upload-status" class="hint" style="margin-top:4px;"></div>
-      <img id="image-preview" src="" alt="preview" style="display:none;max-height:120px;margin-top:8px;border-radius:6px;border:1px solid var(--border);">
-    {% elif (table.name == 'IMAGE_TAG' or table.name == 'IMAGE_HINT') and c.name == 'IMAGE_ID' %}
-      <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
-        <option value="">이미지를 선택하세요</option>
-        {% for img in image_resources %}
-        <option value="{{ img['IMAGE_ID'] }}" data-bucket-path="{{ img['BUCKET_PATH'] }}" {{ 'selected' if values.get(c.name)|string == img['IMAGE_ID']|string else '' }}>{{ img['IMAGE_NAME'] }} (ID: {{ img['IMAGE_ID'] }})</option>
-        {% endfor %}
-      </select>
-      <img id="image-id-preview" src="" alt="" style="display:none;max-height:80px;margin-top:8px;border-radius:6px;border:1px solid var(--border);">
-    {% elif c.name == 'TAG_TEXT' and table.name == 'IMAGE_TAG' %}
+    {% elif is_image_resource and c.name == 'IMAGE_NAME' %}
       <input type="text" id="f-{{ c.name }}" name="{{ c.name }}"
              value="{{ values.get(c.name, '') }}"
              {{ '' if c.nullable else 'required' }}>
-      <div class="hint">쉼표(,)로 구분하면 여러 태그를 한 번에 추가할 수 있습니다.</div>
     {% elif c.data_type.startswith('TIMESTAMP') or c.data_type == 'DATE' %}
       <input type="datetime-local" id="f-{{ c.name }}" name="{{ c.name }}"
              value="{{ values.get(c.name, '')[:16] if values.get(c.name) else '' }}"
@@ -85,53 +83,60 @@
 {% block scripts %}
 <script>
 (function() {
-  // IMAGE_RESOURCE 업로드
-  const uploadBtn = document.getElementById('upload-btn');
-  const fileInput = document.getElementById('image-upload');
-  const bucketPathInput = document.getElementById('f-BUCKET_PATH');
-  const imageNameInput = document.getElementById('f-IMAGE_NAME');
-  const preview = document.getElementById('image-preview');
-  const status = document.getElementById('upload-status');
+  // IMAGE_RESOURCE: IMAGE_ID 결정 → 파일 업로드 → hidden 경로 채우기
+  // image_id 는 서버에서 내려준 다음 ID (next_image_id) 또는 편집 모드의 기존 ID
+  const nextId = {{ next_image_id if next_image_id is defined else 'null' }};
+  const isEdit = document.querySelector('input[name="__pk__IMAGE_ID"]') !== null;
+  const imageId = isEdit ? document.querySelector('input[name="__pk__IMAGE_ID"]').value
+                         : (nextId ? String(nextId) : null);
 
-  if (uploadBtn) {
-    uploadBtn.addEventListener('click', async function() {
-      const file = fileInput.files[0];
-      if (!file) { status.textContent = '파일을 선택하세요.'; return; }
-      status.textContent = '업로드 중…';
+  function getPathInput(kind) {
+    const map = { file: 'f-IMAGE_FILE_PATH', tags: 'f-IMAGE_TAG_PATH', hint: 'f-IMAGE_HINT_PATH' };
+    return document.getElementById(map[kind]);
+  }
+
+  document.querySelectorAll('button[data-upload]').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const kind = btn.getAttribute('data-upload');
+      const input = document.getElementById('upload-input-' + kind);
+      const status = document.getElementById('upload-status-' + kind);
+      const file = input.files[0];
+      if (!file) { status.textContent = '파일을 선택하세요.'; status.style.color = '#f87171'; return; }
+      if (!imageId) { status.textContent = 'IMAGE_ID 를 먼저 확정해야 합니다 (image_id 누락).'; status.style.color = '#f87171'; return; }
+      status.textContent = '업로드 중…'; status.style.color = '';
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('image_id', imageId);
+      formData.append('kind', kind);
+      const endpoint = (kind === 'file') ? '/upload-image' : '/upload-json';
       try {
-        const resp = await fetch('/upload-image', { method: 'POST', body: formData });
+        const resp = await fetch(endpoint, { method: 'POST', body: formData });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.detail || '업로드 실패');
-        bucketPathInput.value = data.bucket_path;
-        if (imageNameInput && !imageNameInput.value) imageNameInput.value = data.image_name;
+        getPathInput(kind).value = data.bucket_path;
+        // 태그/힌트 JSON 파일명 → image_name 자동 제안
+        if (kind !== 'file') {
+          const nameInput = document.getElementById('f-IMAGE_NAME');
+          if (nameInput && !nameInput.value) {
+            const base = data.image_name.replace(/\.tags\.json$|\.hint\.json$|\.json$/i, '');
+            nameInput.value = base;
+          }
+        }
         status.textContent = '업로드 완료: ' + data.bucket_path;
-        preview.src = '/image-preview?path=' + encodeURIComponent(data.bucket_path);
-        preview.style.display = 'block';
+        status.style.color = '#34d399';
+        if (kind === 'file') {
+          const img = document.getElementById('image-preview-slot');
+          if (img) {
+            img.src = '/image-preview?path=' + encodeURIComponent(data.bucket_path);
+            img.style.display = 'block';
+          }
+        }
       } catch (e) {
         status.textContent = '오류: ' + e.message;
+        status.style.color = '#f87171';
       }
     });
-  }
-
-  // IMAGE_ID 드롭다운 썸네일 미리보기
-  const imageIdSelect = document.getElementById('f-IMAGE_ID');
-  const imageIdPreview = document.getElementById('image-id-preview');
-  if (imageIdSelect) {
-    function updateImagePreview() {
-      const selected = imageIdSelect.options[imageIdSelect.selectedIndex];
-      const path = selected.getAttribute('data-bucket-path');
-      if (path) {
-        imageIdPreview.src = '/image-preview?path=' + encodeURIComponent(path);
-        imageIdPreview.style.display = 'block';
-      } else {
-        imageIdPreview.style.display = 'none';
-      }
-    }
-    imageIdSelect.addEventListener('change', updateImagePreview);
-    if (imageIdSelect.value) updateImagePreview();
-  }
+  });
 })();
 </script>
 {% endblock %}

@@ -42,10 +42,12 @@
         {% set fk = fk_map.get(cn) %}
         {% if fk %}
           <a class="fk-link" href="/table/{{ fk[0] }}/{{ fk[1] }}?{{ cn }}={{ row[cn] | urlencode }}" title="FK → {{ fk[0] }}.{{ fk[1] }}">{{ row[cn] | fmt }}</a>
-        {% elif is_image_resource and cn == 'BUCKET_PATH' and row[cn] %}
+        {% elif is_image_resource and cn == 'IMAGE_FILE_PATH' and row[cn] %}
           <a target="_blank" href="/image-preview?path={{ row[cn] | urlencode }}" title="미리보기">
             <img src="/image-preview?path={{ row[cn] | urlencode }}" alt="" style="max-height:60px;border-radius:4px;border:1px solid var(--border);">
           </a>
+        {% elif is_image_resource and cn in ('IMAGE_TAG_PATH', 'IMAGE_HINT_PATH') and row[cn] %}
+          <a class="fk-link" target="_blank" href="/image-preview?path={{ row[cn] | urlencode }}" title="JSON 보기">JSON ↗</a>
         {% else %}
           {{ row[cn] | fmt }}
         {% endif %}

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -200,13 +200,12 @@ async def row_new_form(request: Request, owner: str, name: str):
     table = meta.get_table(owner, name)
     if not table:
         raise HTTPSeeOther("/")
-    image_resources = []
-    if table.name in ("IMAGE_TAG", "IMAGE_HINT"):
-        image_resources = db.fetch_all(
-            "SELECT IMAGE_ID, IMAGE_NAME, BUCKET_PATH FROM SPEECHAPP_CONTENT.IMAGE_RESOURCE ORDER BY IMAGE_NAME ASC"
-        )
+    next_image_id = None
+    if table.name == "IMAGE_RESOURCE":
+        row = db.fetch_one("SELECT NVL(MAX(IMAGE_ID), 0) + 1 AS NEXT_ID FROM SPEECHAPP_CONTENT.IMAGE_RESOURCE")
+        next_image_id = row["NEXT_ID"] if row else 1
     ctx = base_ctx(request)
-    ctx.update(table=table, mode="create", values={}, row_pk_query="", image_resources=image_resources)
+    ctx.update(table=table, mode="create", values={}, row_pk_query="", next_image_id=next_image_id)
     return templates.TemplateResponse(request, "row_form.html", ctx)
 
 
@@ -225,17 +224,11 @@ async def row_edit_form(request: Request, owner: str, name: str):
     row = crud.fetch_row_by_pk(table, pk_vals)
     if not row:
         raise HTTPSeeOther(_back(owner, name))
-    image_resources = []
-    if table.name in ("IMAGE_TAG", "IMAGE_HINT"):
-        image_resources = db.fetch_all(
-            "SELECT IMAGE_ID, IMAGE_NAME, BUCKET_PATH FROM SPEECHAPP_CONTENT.IMAGE_RESOURCE ORDER BY IMAGE_NAME ASC"
-        )
     ctx = base_ctx(request)
     ctx.update(
         table=table, mode="edit",
         values={k: _fmt_value(v) for k, v in row.items()},
         pk_query=urlencode([(c.name, _fmt_value(row.get(c.name))) for c in table.pk_columns()]),
-        image_resources=image_resources,
     )
     return templates.TemplateResponse(request, "row_form.html", ctx)
 
@@ -250,26 +243,6 @@ async def row_create(request: Request, owner: str, name: str):
         raise HTTPSeeOther("/")
     form = await request.form()
     data = _collect_form_data(table, form, insertable_only=True)
-
-    # IMAGE_TAG: TAG_TEXT 쉼표 분리 → 여러 행 INSERT
-    if table.name == "IMAGE_TAG":
-        raw_tags = str(data.get("TAG_TEXT", ""))
-        tag_texts = [t.strip() for t in raw_tags.split(",") if t.strip()]
-        if not tag_texts:
-            resp = RedirectResponse(_back(owner, name), status_code=303)
-            set_flash(resp, "태그를 하나 이상 입력하세요.", kind="err")
-            return resp
-        image_id = data.get("IMAGE_ID")
-        resp = RedirectResponse(_back(owner, name), status_code=303)
-        try:
-            total = 0
-            for tt in tag_texts:
-                n = crud.insert_row(table, {"IMAGE_ID": image_id, "TAG_TEXT": tt})
-                total += n
-            set_flash(resp, f"{total}개 태그가 추가되었습니다.")
-        except Exception as e:
-            set_flash(resp, meta.friendly_error(e), kind="err")
-        return resp
 
     resp = RedirectResponse(_back(owner, name), status_code=303)
     try:
@@ -318,16 +291,46 @@ async def row_delete(request: Request, owner: str, name: str):
 # ---------- 이미지 업로드 / 미리보기 ----------
 
 @app.post("/upload-image")
-async def upload_image(file: UploadFile):
-    """이미지를 OCI Object Storage 에 업로드하고 bucket_path 와 image_name 을 반환한다."""
-    from uuid import uuid4
+async def upload_image(request: Request, file: UploadFile):
+    """이미지를 images/{image_id}/{image_id}.{ext} 규약으로 업로드한다.
+
+    image_id 는 클라이언트가 사전에 생성(또는 DB max+1)해서 전달한다.
+    """
+    form = await request.form()
+    image_id = str(form.get("image_id", "")).strip()
+    if not image_id.isdigit():
+        raise HTTPException(status_code=400, detail="image_id 가 필요합니다 (숫자).")
     data = await file.read()
     ext = oci_storage.extract_ext(file.filename or "")
     if not ext:
         ext = "png"
-    object_key = f"content/{uuid4().hex}.{ext}"
+    object_key = f"images/{image_id}/{image_id}.{ext}"
     content_type = file.content_type or "application/octet-stream"
     oci_storage.upload_object(object_key, data, content_type)
+    return {
+        "bucket_path": object_key,
+        "image_name": file.filename or object_key,
+    }
+
+
+@app.post("/upload-json")
+async def upload_json(request: Request, file: UploadFile):
+    """태그/힌트 JSON을 images/{image_id}/{image_id}.{kind}.json 규약으로 업로드한다.
+
+    kind: tags | hint
+    """
+    form = await request.form()
+    image_id = str(form.get("image_id", "")).strip()
+    kind = str(form.get("kind", "")).strip()
+    if not image_id.isdigit():
+        raise HTTPException(status_code=400, detail="image_id 가 필요합니다 (숫자).")
+    if kind not in ("tags", "hint"):
+        raise HTTPException(status_code=400, detail="kind 는 tags 또는 hint 여야 합니다.")
+    if not (file.filename or "").lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail=".json 파일만 허용됩니다.")
+    data = await file.read()
+    object_key = f"images/{image_id}/{image_id}.{kind}.json"
+    oci_storage.upload_object(object_key, data, "application/json")
     return {
         "bucket_path": object_key,
         "image_name": file.filename or object_key,
