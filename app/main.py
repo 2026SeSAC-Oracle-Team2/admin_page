@@ -1,6 +1,7 @@
 """FastAPI 라우트 — 페이지 + CRUD 액션 + SQL 콘솔."""
 from __future__ import annotations
 
+import uuid
 from typing import Any
 from urllib.parse import quote, urlencode
 
@@ -200,12 +201,9 @@ async def row_new_form(request: Request, owner: str, name: str):
     table = meta.get_table(owner, name)
     if not table:
         raise HTTPSeeOther("/")
-    next_image_id = None
-    if table.name == "IMAGE_RESOURCE":
-        row = db.fetch_one("SELECT NVL(MAX(IMAGE_ID), 0) + 1 AS NEXT_ID FROM SPEECHAPP_CONTENT.IMAGE_RESOURCE")
-        next_image_id = row["NEXT_ID"] if row else 1
+    # IMAGE_RESOURCE 도 image_id 를 사전 확정하지 않는다(pending 업로드 → INSERT 후 이동).
     ctx = base_ctx(request)
-    ctx.update(table=table, mode="create", values={}, row_pk_query="", next_image_id=next_image_id)
+    ctx.update(table=table, mode="create", values={}, row_pk_query="")
     return templates.TemplateResponse(request, "row_form.html", ctx)
 
 
@@ -235,6 +233,57 @@ async def row_edit_form(request: Request, owner: str, name: str):
 
 # ---------- 행 추가/수정/삭제 액션 ----------
 
+_IMAGE_PENDING_FIELDS = (
+    ("IMAGE_FILE_PATH", "__pending_image__"),
+    ("IMAGE_TAG_PATH", "__pending_tags__"),
+    ("IMAGE_HINT_PATH", "__pending_hint__"),
+)
+
+
+def _final_rel_path(real_id: int, pending_key: str) -> str:
+    """pending_key(tmp/xxx.png | tmp/xxx.tags.json | tmp/xxx.hint.json) →
+    최종 rel_path("{real_id}/{real_id}.{ext|.tags.json|.hint.json}")."""
+    fname = pending_key.rsplit("/", 1)[-1]  # uuid.ext | uuid.tags.json | uuid.hint.json
+    suffix = fname.split(".", 1)[1] if "." in fname else ""  # ext | tags.json | hint.json
+    return f"{real_id}/{real_id}.{suffix}"
+
+
+def _move_pending_objects(table: meta.TableInfo, real_id: int, pending_by_col: dict[str, str]) -> dict[str, str]:
+    """pending tmp 객체들을 실제 image_id 위치로 이동하고 최종 rel_path 를 반환.
+
+    이동에 실패한 키는 결과에서 제외(해당 컬럼 UPDATE 생략)하고 tmp 객체는 남긴다.
+    """
+    final: dict[str, str] = {}
+    for col, pending_key in pending_by_col.items():
+        dst = _final_rel_path(real_id, pending_key)
+        try:
+            oci_storage.move_object(oci_storage.build_key(pending_key), oci_storage.build_key(dst))
+            final[col] = dst
+        except Exception:
+            # copy 성공 후 delete 실패 등 부분 상황에서 dst 가 이미 존재할 수 있으므로
+            # 그 경우 경로만 채택한다(객체 존재 검사는 프록시에서 자연 노출).
+            try:
+                oci_storage.delete_object(oci_storage.build_key(pending_key))
+                final[col] = dst
+            except Exception:
+                pass
+    return final
+
+
+def _process_image_pendings(table: meta.TableInfo, real_id: int, form: Any) -> dict[str, str]:
+    """IMAGE_RESOURCE: hidden pending_key 들을 실제 ID 위치로 move."""
+    if table.name != "IMAGE_RESOURCE":
+        return {}
+    pending_by_col: dict[str, str] = {}
+    for col, field_name in _IMAGE_PENDING_FIELDS:
+        v = str(form.get(field_name, "") or "").strip()
+        if v and v.startswith("tmp/"):
+            pending_by_col[col] = v
+    if not pending_by_col:
+        return {}
+    return _move_pending_objects(table, real_id, pending_by_col)
+
+
 @app.post("/table/{owner}/{name}/row/create")
 async def row_create(request: Request, owner: str, name: str):
     require_login(request)
@@ -244,10 +293,39 @@ async def row_create(request: Request, owner: str, name: str):
     form = await request.form()
     data = _collect_form_data(table, form, insertable_only=True)
 
+    is_image = table.name == "IMAGE_RESOURCE"
+    if is_image:
+        # 경로 컬럼은 INSERT 시 placeholder 로 채움(NOT NULL 회피) → INSERT 후 실제 경로로 UPDATE
+        for col, _f in _IMAGE_PENDING_FIELDS:
+            data.pop(col, None)
+        data["IMAGE_FILE_PATH"] = "__pending_final__"
+
     resp = RedirectResponse(_back(owner, name), status_code=303)
     try:
         n = crud.insert_row(table, data)
-        set_flash(resp, f"{n}행이 추가되었습니다.")
+        real_id: int | None = None
+        if is_image:
+            # Oracle IDENTITY 값 확보: INSERT 직전/직후 MAX 재조회.
+            # ⚠️ 동시 INSERT 시 경합 가능 (단일 관리자 워크플로 가정).
+            row = db.fetch_one("SELECT NVL(MAX(IMAGE_ID), 0) AS REAL_ID FROM SPEECHAPP_CONTENT.IMAGE_RESOURCE")
+            real_id = int(row["REAL_ID"]) if row else None
+        if is_image and real_id is not None:
+            final = _process_image_pendings(table, real_id, form)
+            if final:
+                sets = ", ".join(f"{col} = :b_{col}" for col in final)
+                binds: dict[str, Any] = {f"b_{c}": v for c, v in final.items()}
+                binds["pk"] = real_id
+                db.execute_dml(
+                    f"UPDATE SPEECHAPP_CONTENT.IMAGE_RESOURCE SET {sets} WHERE IMAGE_ID = :pk",
+                    binds,
+                )
+            else:
+                # 이동 실패/업로드 없음: placeholder 가 남지 않도록 안전한 최소 경로 보정
+                db.execute_dml(
+                    "UPDATE SPEECHAPP_CONTENT.IMAGE_RESOURCE SET IMAGE_FILE_PATH = :p WHERE IMAGE_ID = :pk",
+                    {"p": f"{real_id}/{real_id}.png", "pk": real_id},
+                )
+        set_flash(resp, f"{n}행이 추가되었습니다." + (f" (image_id={real_id})" if is_image and real_id else ""))
     except Exception as e:
         set_flash(resp, meta.friendly_error(e), kind="err")
     return resp
@@ -264,7 +342,25 @@ async def row_update(request: Request, owner: str, name: str):
     data = _collect_form_data(table, form, insertable_only=False)
     resp = RedirectResponse(_back(owner, name), status_code=303)
     try:
+        if table.name == "IMAGE_RESOURCE":
+            # 새 파일 업로드(pending)가 있으면 실제 PK 로 move 후 경로 UPDATE,
+            # 경로 컬럼은 사용자 입력 대신 서버가 관리한다.
+            for col, _f in _IMAGE_PENDING_FIELDS:
+                data.pop(col, None)
+        is_image_new = table.name == "IMAGE_RESOURCE"
         n = crud.update_row(table, pk_vals, data)
+        if is_image_new:
+            real_id = int(str(pk_vals.get("IMAGE_ID", "")).strip() or 0) or None
+            if real_id:
+                final = _process_image_pendings(table, real_id, form)
+                if final:
+                    sets = ", ".join(f"{col} = :b_{col}" for col in final)
+                    binds: dict[str, Any] = {f"b_{c}": v for c, v in final.items()}
+                    binds["pk"] = real_id
+                    db.execute_dml(
+                        f"UPDATE SPEECHAPP_CONTENT.IMAGE_RESOURCE SET {sets} WHERE IMAGE_ID = :pk",
+                        binds,
+                    )
         set_flash(resp, f"{n}행이 수정되었습니다.")
     except Exception as e:
         set_flash(resp, meta.friendly_error(e), kind="err")
@@ -272,15 +368,15 @@ async def row_update(request: Request, owner: str, name: str):
 
 
 def _delete_image_artifacts(row: dict[str, Any]) -> list[str]:
-    """IMAGE_RESOURCE 행에 연결된 OCI 객체들을 삭제한다. 실패해도 계속 진행."""
+    """IMAGE_RESOURCE 행에 연결된 OCI 객체들을 삭제한다 (base 붙여 전체 키 생성). 실패해도 계속 진행."""
     deleted: list[str] = []
     for key in ("IMAGE_FILE_PATH", "IMAGE_TAG_PATH", "IMAGE_HINT_PATH"):
-        path = row.get(key)
-        if not path:
+        rel = row.get(key)
+        if not rel:
             continue
         try:
-            oci_storage.delete_object(str(path))
-            deleted.append(str(path))
+            oci_storage.delete_object(oci_storage.build_key(str(rel)))
+            deleted.append(str(rel))
         except Exception:
             pass  # 이미 없거나 일시 오류 — DB 삭제는 진행
     return deleted
@@ -316,55 +412,58 @@ async def row_delete(request: Request, owner: str, name: str):
 
 @app.post("/upload-image")
 async def upload_image(request: Request, file: UploadFile):
-    """이미지를 images/{image_id}/{image_id}.{ext} 규약으로 업로드한다.
+    """이미지를 임시 객체 tmp/{uuid}.{ext} 로 업로드하고 pending_key 를 반환한다.
 
-    image_id 는 클라이언트가 사전에 생성(또는 DB max+1)해서 전달한다.
+    최종 위치(images/{image_id}/{image_id}.{ext})로의 이동은 행 INSERT 후
+    실제 image_id 가 확정된 시점에 row_create 가 수행한다 (ID 불일치 근본 해결).
     """
-    form = await request.form()
-    image_id = str(form.get("image_id", "")).strip()
-    if not image_id.isdigit():
-        raise HTTPException(status_code=400, detail="image_id 가 필요합니다 (숫자).")
     data = await file.read()
     ext = oci_storage.extract_ext(file.filename or "")
     if not ext:
         ext = "png"
-    object_key = f"images/{image_id}/{image_id}.{ext}"
+    tmp_key = f"tmp/{uuid.uuid4().hex}.{ext}"
     content_type = file.content_type or "application/octet-stream"
-    oci_storage.upload_object(object_key, data, content_type)
+    oci_storage.upload_object(tmp_key, data, content_type)
     return {
-        "bucket_path": object_key,
-        "image_name": file.filename or object_key,
+        "pending_key": tmp_key,
+        "rel_ext": ext,
+        "image_name": file.filename or tmp_key,
     }
 
 
 @app.post("/upload-json")
 async def upload_json(request: Request, file: UploadFile):
-    """태그/힌트 JSON을 images/{image_id}/{image_id}.{kind}.json 규약으로 업로드한다.
+    """태그/힌트 JSON을 임시 객체 tmp/{uuid}.{kind}.json 로 업로드하고 pending_key 를 반환한다.
 
-    kind: tags | hint
+    kind: tags | hint. 최종 이동은 INSERT 후 실제 image_id 로 수행.
     """
-    form = await request.form()
-    image_id = str(form.get("image_id", "")).strip()
-    kind = str(form.get("kind", "")).strip()
-    if not image_id.isdigit():
-        raise HTTPException(status_code=400, detail="image_id 가 필요합니다 (숫자).")
+    kind = ""
+    content_type_header = request.headers.get("content-type", "")
+    if "multipart/form-data" in content_type_header:
+        try:
+            form = await request.form()
+            kind = str(form.get("kind", "")).strip()
+        except Exception:
+            kind = ""
+    if not kind:
+        kind = "tags"  # 이전 클라이언트 호환 기본값
     if kind not in ("tags", "hint"):
         raise HTTPException(status_code=400, detail="kind 는 tags 또는 hint 여야 합니다.")
     if not (file.filename or "").lower().endswith(".json"):
         raise HTTPException(status_code=400, detail=".json 파일만 허용됩니다.")
     data = await file.read()
-    object_key = f"images/{image_id}/{image_id}.{kind}.json"
-    oci_storage.upload_object(object_key, data, "application/json")
+    tmp_key = f"tmp/{uuid.uuid4().hex}.{kind}.json"
+    oci_storage.upload_object(tmp_key, data, "application/json")
     return {
-        "bucket_path": object_key,
-        "image_name": file.filename or object_key,
+        "pending_key": tmp_key,
+        "image_name": file.filename or tmp_key,
     }
 
 
 @app.get("/image-preview")
 async def image_preview(path: str):
-    """bucket_path 에 해당하는 객체의 presigned URL 을 생성해 리다이렉트한다."""
-    url = oci_storage.generate_presigned_url(path, expiry_minutes=30)
+    """rel_path(base 미포함, 예: 12/12.png)에 해당하는 객체의 presigned URL 을 생성해 리다이렉트한다."""
+    url = oci_storage.generate_presigned_url(oci_storage.build_key(path), expiry_minutes=30)
     return RedirectResponse(url=url)
 
 
