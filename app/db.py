@@ -62,6 +62,26 @@ def execute_dml(sql: str, binds: dict[str, Any] | None = None) -> int:
         return rowcount
 
 
+def execute_dml_returning(sql: str, binds: dict[str, Any] | None, out_name: str) -> Any:
+    """DML + RETURNING INTO. 반환 컬럼 값을 커밋 후 돌려준다.
+
+    binds에 out_name 키는 포함하지 않는다 (내부에서 OUT 바인드로 추가).
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            out_var = cur.var(oracledb.DB_TYPE_NUMBER)
+            full_binds = dict(binds or {})
+            full_binds[out_name] = out_var
+            cur.execute(sql, full_binds)
+            rowcount = cur.rowcount
+            out_value = out_var.getvalue()
+        conn.commit()
+        if rowcount and out_var is not None:
+            vals = out_var if isinstance(out_var, list) else out_var.getvalue()
+            return vals[0] if isinstance(vals, list) and vals else vals
+        return None
+
+
 def check_connection() -> bool:
     try:
         fetch_one("SELECT 1 AS OK FROM dual")

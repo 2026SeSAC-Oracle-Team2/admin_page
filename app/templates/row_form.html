@@ -9,8 +9,12 @@
   <a class="btn btn-ghost" href="/table/{{ table.owner }}/{{ table.name }}">← 목록으로</a>
 </div>
 
+{# IMAGE_RESOURCE: 파일 입력을 폼에 직접 넣고 enctype=multipart로 제출한다.
+   서버가 INSERT → RETURNING image_id → OCI 업로드 → 경로 UPDATE 순서로 처리.
+   (예전 pending/tmp/move/시퀀스예약 구조는 전부 제거됨) #}
 <form class="form-card"
       method="post"
+      {% if is_image_resource %}enctype="multipart/form-data"{% endif %}
       action="/table/{{ table.owner }}/{{ table.name }}/row/{{ 'update' if mode == 'edit' else 'create' }}">
   {% if mode == 'edit' %}
     {% for c in table.pk_columns() %}
@@ -21,6 +25,7 @@
   {% set is_image_resource = (table.name == 'IMAGE_RESOURCE') %}
   {% set form_cols = table.insertable_columns() if mode == 'create' else table.updatable_columns() %}
   {% for c in form_cols %}
+  {% if is_image_resource and c.name in ('IMAGE_FILE_PATH', 'IMAGE_TAG_PATH', 'IMAGE_HINT_PATH') %}{% continue %}{% endif %}
   <div class="field">
     <label for="f-{{ c.name }}">
       {{ c.name }}
@@ -31,30 +36,11 @@
       </span>
     </label>
 
-    {% if is_image_resource and c.name in ('IMAGE_FILE_PATH', 'IMAGE_TAG_PATH', 'IMAGE_HINT_PATH') %}
-      {% set fkey = 'file' if c.name == 'IMAGE_FILE_PATH' else ('tags' if c.name == 'IMAGE_TAG_PATH' else 'hint') %}
-      {% set accept = 'image/*' if c.name == 'IMAGE_FILE_PATH' else '.json' %}
-      {# rel_path 는 서버가 pending 이동 후 확정 — hidden 은 표시용으로만 값 유지 #}
-      <input type="hidden" id="f-{{ c.name }}" name="{{ c.name }}" value="{{ values.get(c.name, '') }}">
-      <input type="hidden" id="pending-{{ fkey }}" name="__pending_{{ 'image' if fkey == 'file' else fkey }}" value="">
-      <input type="file" id="upload-input-{{ fkey }}" accept="{{ accept }}" style="display:inline-block;">
-      <button type="button" class="btn btn-sm" data-upload="{{ fkey }}" style="margin-left:6px;">업로드</button>
-      <div id="upload-status-{{ fkey }}" class="hint" style="margin-top:4px;">
-        {% if values.get(c.name) %}현재: {{ values.get(c.name) }}{% endif %}
-      </div>
-      {% if c.name == 'IMAGE_FILE_PATH' %}
-      <img id="image-preview-slot" src="{{ '/image-preview?path=' + (values.get(c.name) | urlencode) if values.get(c.name) else '' }}" alt="preview"
-           style="{{ '' if values.get(c.name) else 'display:none;' }}max-height:120px;margin-top:8px;border-radius:6px;border:1px solid var(--border);">
-      {% endif %}
-    {% elif c.name == 'HINT_TYPE' %}
+    {% if c.name == 'HINT_TYPE' %}
       <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
         <option value="CHOSUNG" {{ 'selected' if values.get(c.name) == 'CHOSUNG' else '' }}>CHOSUNG</option>
         <option value="ASSOCIATION" {{ 'selected' if values.get(c.name) == 'ASSOCIATION' else '' }}>ASSOCIATION</option>
       </select>
-    {% elif is_image_resource and c.name == 'IMAGE_NAME' %}
-      <input type="text" id="f-{{ c.name }}" name="{{ c.name }}"
-             value="{{ values.get(c.name, '') }}"
-             {{ '' if c.nullable else 'required' }}>
     {% elif c.data_type.startswith('TIMESTAMP') or c.data_type == 'DATE' %}
       <input type="datetime-local" id="f-{{ c.name }}" name="{{ c.name }}"
              value="{{ values.get(c.name, '')[:16] if values.get(c.name) else '' }}"
@@ -69,11 +55,42 @@
              value="{{ values.get(c.name, '') }}"
              {{ '' if c.nullable else 'required' }}>
     {% endif %}
-    {% if mode == 'create' and c.data_default %}
+    {% if c.data_default %}
       <div class="hint">기본값: {{ c.data_default }}</div>
     {% endif %}
   </div>
   {% endfor %}
+
+  {% if is_image_resource %}
+  <div class="field">
+    <label>이미지 파일 <span class="field-meta">필수 (jpg/png/webp)</span></label>
+    <input type="file" id="in-image-file" name="__file_image__" accept="image/*" required>
+    {% if mode == 'edit' and values.get('IMAGE_FILE_PATH') %}
+      <div class="hint">새 파일을 선택하지 않으면 기존 이미지({{ values.get('IMAGE_FILE_PATH') }})가 유지됩니다.</div>
+    {% endif %}
+  </div>
+  <div class="field">
+    <label>태그 JSON <span class="field-meta">선택 (.tags.json)</span></label>
+    <input type="file" id="in-tags-file" name="__file_tags__" accept=".json">
+    {% if mode == 'edit' and values.get('IMAGE_TAG_PATH') %}
+      <div class="hint">새 파일을 선택하지 않으면 기존 태그가 유지됩니다.</div>
+    {% endif %}
+  </div>
+  <div class="field">
+    <label>힌트 JSON <span class="field-meta">선택 (.hint.json)</span></label>
+    <input type="file" id="in-hint-file" name="__file_hint__" accept=".json">
+    {% if mode == 'edit' and values.get('IMAGE_HINT_PATH') %}
+      <div class="hint">새 파일을 선택하지 않으면 기존 힌트가 유지됩니다.</div>
+    {% endif %}
+  </div>
+  {% if values.get('IMAGE_FILE_PATH') %}
+  <div class="field">
+    <label>현재 이미지 미리보기</label>
+    <img id="image-preview-slot" src="/image-preview?path={{ values.get('IMAGE_FILE_PATH') | urlencode }}"
+         alt="preview" style="max-height:140px;border-radius:6px;border:1px solid var(--border);">
+  </div>
+  {% endif %}
+  {% endif %}
 
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">{{ '저장' if mode == 'edit' else '추가' }}</button>
@@ -83,59 +100,23 @@
 {% endblock %}
 
 {% block scripts %}
+{% if is_image_resource is defined and is_image_resource %}
+{% endif %}
 <script>
 (function() {
-  // IMAGE_RESOURCE pending 업로드: 파일을 tmp/ 에 올려 pending_key 를 hidden 으로 넘기고,
-  // 실제 images/{id}/{id}.{ext} 이동은 INSERT(실제 ID 확정) 후 서버가 수행한다.
-  // → 폼 단계에서 image_id 를 예측하지 않으므로 DB image_id 와 경로 ID 가 항상 일치.
-
-  function getPathInput(kind) {
-    const map = { file: 'f-IMAGE_FILE_PATH', tags: 'f-IMAGE_TAG_PATH', hint: 'f-IMAGE_HINT_PATH' };
-    return document.getElementById(map[kind]);
-  }
-
-  document.querySelectorAll('button[data-upload]').forEach(btn => {
-    btn.addEventListener('click', async function() {
-      const kind = btn.getAttribute('data-upload');
-      const input = document.getElementById('upload-input-' + kind);
-      const status = document.getElementById('upload-status-' + kind);
-      const pendingInput = document.getElementById('pending-' + kind);
-      const file = input.files[0];
-      if (!file) { status.textContent = '파일을 선택하세요.'; status.style.color = '#f87171'; return; }
-      status.textContent = '업로드 중…'; status.style.color = '';
-      const formData = new FormData();
-      formData.append('file', file);
-      if (kind !== 'file') formData.append('kind', kind);
-      const endpoint = (kind === 'file') ? '/upload-image' : '/upload-json';
-      try {
-        const resp = await fetch(endpoint, { method: 'POST', body: formData });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.detail || '업로드 실패');
-        pendingInput.value = data.pending_key;
-        // 태그/힌트 JSON 파일명 → image_name 자동 제안
-        if (kind !== 'file') {
-          const nameInput = document.getElementById('f-IMAGE_NAME');
-          if (nameInput && !nameInput.value) {
-            const base = (data.image_name || '').replace(/\.tags\.json$|\.hint\.json$|\.json$/i, '');
-            if (base) nameInput.value = base;
-          }
-        }
-        status.textContent = '업로드 완료 (저장 시 실제 ID 위치로 이동됩니다)';
-        status.style.color = '#34d399';
-        if (kind === 'file' && data.pending_key) {
-          // tmp 객체도 프록시로 바로 미리보기 가능 (build_key 가 처리)
-          const img = document.getElementById('image-preview-slot');
-          if (img) {
-            img.src = '/image-preview?path=' + encodeURIComponent(data.pending_key);
-            img.style.display = 'block';
-          }
-        }
-      } catch (e) {
-        status.textContent = '오류: ' + e.message;
-        status.style.color = '#f87171';
+  // 이미지 미리보기: 서버 왕복 없이 브라우저에서 즉시 표시
+  const fileInput = document.getElementById('in-image-file');
+  const img = document.getElementById('image-preview-slot');
+  if (fileInput && fileInput) {
+    fileInput.addEventListener('change', function() {
+      const f = fileInput.files[0];
+      if (!f) return;
+      if (img) {
+        img.src = URL.createObjectURL(f);
+        img.style.display = 'block';
       }
     });
-  });
+  }
 })();
 </script>
 {% endblock %}
