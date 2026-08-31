@@ -12,6 +12,8 @@
 {# IMAGE_RESOURCE: 파일 입력을 폼에 직접 넣고 enctype=multipart로 제출한다.
    서버가 INSERT → RETURNING image_id → OCI 업로드 → 경로 UPDATE 순서로 처리.
    (예전 pending/tmp/move/시퀀스예약 구조는 전부 제거됨) #}
+{# ★ is_image_resource는 <form> 태그보다 "먼저" 선언돼야 enctype 조건이 동작함 #}
+{% set is_image_resource = (table.name == 'IMAGE_RESOURCE') %}
 <form class="form-card"
       method="post"
       {% if is_image_resource %}enctype="multipart/form-data"{% endif %}
@@ -22,7 +24,6 @@
     {% endfor %}
   {% endif %}
 
-  {% set is_image_resource = (table.name == 'IMAGE_RESOURCE') %}
   {% set form_cols = table.insertable_columns() if mode == 'create' else table.updatable_columns() %}
   {% for c in form_cols %}
   {% set skip_path_col = is_image_resource and c.name in ('IMAGE_FILE_PATH', 'IMAGE_TAG_PATH', 'IMAGE_HINT_PATH') %}
@@ -56,7 +57,7 @@
              value="{{ values.get(c.name, '') }}"
              {{ '' if c.nullable else 'required' }}>
     {% endif %}
-    {% if c.data_default %}
+    {% if mode == 'create' and c.data_default %}
       <div class="hint">기본값: {{ c.data_default }}</div>
     {% endif %}
   </div>
@@ -65,33 +66,36 @@
 
   {% if is_image_resource %}
   <div class="field">
-    <label>이미지 파일 <span class="field-meta">필수 (jpg/png/webp)</span></label>
+    <label>이미지 파일 <span class="field-meta">필수 (jpg/jpeg/png/webp)</span></label>
     <input type="file" id="in-image-file" name="__file_image__" accept="image/*" required>
     {% if mode == 'edit' and values.get('IMAGE_FILE_PATH') %}
       <div class="hint">새 파일을 선택하지 않으면 기존 이미지({{ values.get('IMAGE_FILE_PATH') }})가 유지됩니다.</div>
     {% endif %}
+    {# 미리보기: create/edit 공용 슬롯.
+       - create: 파일 선택 시 브라우저 로컬 미리보기(URL.createObjectURL)
+       - edit: 기존 이미지(/image-preview PAR)를 먼저 보여주고,
+               새 파일을 선택하면 로컬 미리보기로 교체 #}
+    <img id="image-preview-slot"
+         src="{{ '/image-preview?path=' + (values.get('IMAGE_FILE_PATH') | urlencode) if values.get('IMAGE_FILE_PATH') else '' }}"
+         alt="preview"
+         style="display:{{ 'block' if values.get('IMAGE_FILE_PATH') else 'none' }};max-height:140px;margin-top:8px;border-radius:6px;border:1px solid var(--border);">
   </div>
   <div class="field">
     <label>태그 JSON <span class="field-meta">선택 (.tags.json)</span></label>
     <input type="file" id="in-tags-file" name="__file_tags__" accept=".json">
     {% if mode == 'edit' and values.get('IMAGE_TAG_PATH') %}
-      <div class="hint">새 파일을 선택하지 않으면 기존 태그가 유지됩니다.</div>
+      <div class="hint">새 파일을 선택하지 않으면 기존 태그({{ values.get('IMAGE_TAG_PATH') }})가 유지됩니다.</div>
+    {% elif mode == 'create' %}
+      <div class="hint">태그 내용은 JSON 파일로 관리됩니다 (LLM 팀 생성분 첨부).</div>
     {% endif %}
   </div>
   <div class="field">
     <label>힌트 JSON <span class="field-meta">선택 (.hint.json)</span></label>
     <input type="file" id="in-hint-file" name="__file_hint__" accept=".json">
     {% if mode == 'edit' and values.get('IMAGE_HINT_PATH') %}
-      <div class="hint">새 파일을 선택하지 않으면 기존 힌트가 유지됩니다.</div>
+      <div class="hint">새 파일을 선택하지 않으면 기존 힌트({{ values.get('IMAGE_HINT_PATH') }})가 유지됩니다.</div>
     {% endif %}
   </div>
-  {% if values.get('IMAGE_FILE_PATH') %}
-  <div class="field">
-    <label>현재 이미지 미리보기</label>
-    <img id="image-preview-slot" src="/image-preview?path={{ values.get('IMAGE_FILE_PATH') | urlencode }}"
-         alt="preview" style="max-height:140px;border-radius:6px;border:1px solid var(--border);">
-  </div>
-  {% endif %}
   {% endif %}
 
   <div class="form-actions">
@@ -103,22 +107,22 @@
 
 {% block scripts %}
 {% if is_image_resource is defined and is_image_resource %}
-{% endif %}
 <script>
 (function() {
-  // 이미지 미리보기: 서버 왕복 없이 브라우저에서 즉시 표시
+  // 이미지 미리보기: 서버 왕복 없이 브라우저에서 즉시 표시.
+  // - create 모드: 슬롯이 display:none 상태로 항상 존재 → 선택 시 채움
+  // - edit 모드: 기존 이미지(PAR) 표시 중 → 새 파일 선택 시 로컬 미리보기로 교체
   const fileInput = document.getElementById('in-image-file');
   const img = document.getElementById('image-preview-slot');
-  if (fileInput && fileInput) {
+  if (fileInput && img) {
     fileInput.addEventListener('change', function() {
       const f = fileInput.files[0];
       if (!f) return;
-      if (img) {
-        img.src = URL.createObjectURL(f);
-        img.style.display = 'block';
-      }
+      img.src = URL.createObjectURL(f);
+      img.style.display = 'block';
     });
   }
 })();
 </script>
+{% endif %}
 {% endblock %}

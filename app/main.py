@@ -257,11 +257,15 @@ def _insert_image_row_with_files(form: Any) -> int:
     5) 경로 컬럼 UPDATE
     """
     image_name = str(form.get("IMAGE_NAME", "")).strip()
+    if not image_name:
+        raise ValueError("IMAGE_NAME 은 필수입니다.")
 
     image_file = form.get("__file_image__")
     if image_file is None or not getattr(image_file, "filename", None):
         raise ValueError("이미지 파일은 필수입니다. 이미지를 선택한 뒤 추가하세요.")
-    image_ext = oci_storage.extract_ext(image_file.filename or "") or "png"
+    image_ext = oci_storage.extract_ext(image_file.filename or "")
+    if not image_ext:
+        raise ValueError("이미지는 jpg/jpeg/png/webp 형식만 지원합니다.")
 
     image_id = int(db.execute_dml_returning(
         "INSERT INTO SPEECHAPP_CONTENT.IMAGE_RESOURCE (IMAGE_NAME, IMAGE_FILE_PATH) "
@@ -283,6 +287,8 @@ def _insert_image_row_with_files(form: Any) -> int:
         if upload is None or not getattr(upload, "filename", None):
             continue
         try:
+            if not (upload.filename or "").lower().endswith(".json"):
+                raise ValueError(f"{kind} 파일은 .json 이어야 합니다.")
             rel, _ = _store_upload(image_id, kind, upload, "json")
             saved[col] = rel
         except Exception:
@@ -312,6 +318,8 @@ def _store_upload(image_id: int, kind: str, upload: Any, default_ext: str = "jso
     rel_path = _res_rel_path(image_id, kind, ext)
     upload.file.seek(0)
     data = upload.file.read()
+    if not data:
+        raise ValueError("비어 있는 파일입니다. 파일을 다시 선택하세요.")
     content_type = upload.content_type or "application/octet-stream"
     oci_storage.upload_object(oci_storage.build_key(rel_path), data, content_type)
     return rel_path, ext
@@ -366,8 +374,8 @@ async def row_update(request: Request, owner: str, name: str):
         n = crud.update_row(table, pk_vals, data)
         if table.name == "IMAGE_RESOURCE":
             image_id = int(str(pk_vals.get("IMAGE_ID", "")).strip() or 0)
-            for kind, col in (("file", "IMAGE_FILE_PATH"), ("tags", "IMAGE_TAG_PATH"), ("hint", "IMAGE_HINT_PATH")):
-                upload = form.get(f"__file_{kind}__")
+            for kind, (field_name, col) in _IMAGE_FILE_FIELDS.items():
+                upload = form.get(field_name)
                 if upload is None or not getattr(upload, "filename", None):
                     continue  # 새 파일 없음 → 기존 경로 유지
                 rel, _ = _store_upload(image_id, kind, upload)
