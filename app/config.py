@@ -26,6 +26,9 @@ SESSION_COOKIE = "sesac_admin_session"
 SESSION_MAX_AGE = 60 * 60 * 12  # 12시간
 
 # OCI Object Storage
+# 버킷 내 base prefix (예: "images/"). DB 에는 base 를 제외한 rel_path("12/12.png")만 저장하고,
+# 실제 OCI 객체 키는 항상 build_key(rel_path) 로 조합한다. .env IMAGE_PATH_BASE 로 변경 가능.
+IMAGE_PATH_BASE = os.environ.get("IMAGE_PATH_BASE", "images/")
 OCI_NAMESPACE = os.environ.get("OCI_NAMESPACE", "cn5brhz58dgr")
 OCI_BUCKET_PROBLEMFILES = os.environ.get("OCI_BUCKET_PROBLEMFILES", "bucket-team545-problemfiles")
 OCI_CONFIG_PATH = os.environ.get("OCI_CONFIG_PATH", "~/.oci/config")
