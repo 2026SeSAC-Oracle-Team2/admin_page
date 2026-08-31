@@ -1,19 +1,10 @@
 # ============================================================
-# SeSAC Admin Page — Oracle DB 웹 관리 콘솔
+# SeSAC Admin Page — Oracle DB 웹 관리 콘솔 (GitHub 기준)
+# 부트캠프 VM 전용 설정은 docker-compose.override.yml 참조
 # ============================================================
-# 구성:
-#   app/          FastAPI 애플리케이션
-#   docker-compose.yml  배포용 (VM에서 사용)
-#   Dockerfile    이미지 빌드
-#
-# 실행 (VM):
-#   docker compose up -d --build
+# 실행: docker compose up -d --build
+#   → override 파일이 자동으로 병합됨 (OCI 마운트 등)
 #   → http://127.0.0.1:8501  (ssh -L 8501:localhost:8501 로 터널링)
-#
-# 필수 환경변수 (.env 파일, 절대 커밋 금지):
-#   ADMIN_PAGE_PASSWORD   웹 로그인 비밀번호
-#   DB_PASSWORD           speechapp_admin 의 Oracle 비밀번호
-#   SESSION_SECRET        세션 서명용 랜덤 문자열 (openssl rand -hex 32)
 # ============================================================
 
 services:
@@ -26,7 +17,7 @@ services:
       - DB_USER=speechapp_admin
       - DB_HOST=sesac-oracle-db
       - DB_PORT=1521
-      - DB_SERVICE=XEPDB1
+      - DB_SERVICE=${DB_SERVICE:-XEPDB1}
       - DB_PASSWORD=${DB_PASSWORD}
       - ADMIN_PAGE_PASSWORD=${ADMIN_PAGE_PASSWORD}
       - SESSION_SECRET=${SESSION_SECRET}
