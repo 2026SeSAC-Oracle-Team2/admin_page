@@ -25,7 +25,8 @@
   {% set is_image_resource = (table.name == 'IMAGE_RESOURCE') %}
   {% set form_cols = table.insertable_columns() if mode == 'create' else table.updatable_columns() %}
   {% for c in form_cols %}
-  {% if is_image_resource and c.name in ('IMAGE_FILE_PATH', 'IMAGE_TAG_PATH', 'IMAGE_HINT_PATH') %}{% continue %}{% endif %}
+  {% set skip_path_col = is_image_resource and c.name in ('IMAGE_FILE_PATH', 'IMAGE_TAG_PATH', 'IMAGE_HINT_PATH') %}
+  {% if not skip_path_col %}
   <div class="field">
     <label for="f-{{ c.name }}">
       {{ c.name }}
@@ -59,6 +60,7 @@
       <div class="hint">기본값: {{ c.data_default }}</div>
     {% endif %}
   </div>
+  {% endif %}
   {% endfor %}
 
   {% if is_image_resource %}
