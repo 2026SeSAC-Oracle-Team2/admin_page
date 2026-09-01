@@ -85,6 +85,43 @@ def get_table(owner: str, name: str) -> TableInfo | None:
     return t
 
 
+def check_options(owner: str, name: str) -> dict[str, list[str]]:
+    """CHECK 제약이 IN ('A','B',...) 형태인 컬럼의 허용값 목록.
+
+    반환: {컬럼명(대문자): ["A", "B", ...]}
+    - all_constraints(constraint_type='C') + all_cons_columns에서 조건을 읽어
+      "col IN ('X','Y')" 패턴만 파싱. 그 외 조건식(IS NOT NULL, !=, OR 결합 등)은 무시.
+    - 행 추가/수정 폼에서 해당 컬럼을 드롭다운으로 렌더링하는 데 사용.
+    """
+    rows = db.fetch_all(
+        """
+        SELECT cc.column_name, c.search_condition_vc
+        FROM all_constraints c
+        JOIN all_cons_columns cc
+          ON c.owner = cc.owner AND c.constraint_name = cc.constraint_name
+        WHERE c.constraint_type = 'C' AND c.owner = :o AND c.table_name = :t
+          AND c.status = 'ENABLED'
+        """,
+        {"o": owner.upper(), "t": name.upper()},
+    )
+    out: dict[str, list[str]] = {}
+    import re as _re
+    pat = _re.compile(r"^\s*\"?([A-Za-z0-9_]+)\"?\s+IN\s*\((.*)\)\s*$", _re.IGNORECASE | _re.DOTALL)
+    val_re = _re.compile(r"'([^']*)'")
+    for r in rows:
+        cond = r["SEARCH_CONDITION_VC"] or ""
+        m = pat.match(cond.replace("\n", " "))
+        if not m:
+            continue
+        col, body = m.group(1).upper(), m.group(2)
+        vals = val_re.findall(body)
+        if vals:
+            # 같은 컬럼에 여러 IN 제약이 있으면 병합 (중복 제거, 순서 유지)
+            merged = list(dict.fromkeys(out.get(col, []) + vals))
+            out[col] = merged
+    return out
+
+
 def fk_options(owner: str, name: str) -> list[dict]:
     """FK 드롭다운용 옵션 목록. PK 오름차순 정렬.
 
