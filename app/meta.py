@@ -85,6 +85,48 @@ def get_table(owner: str, name: str) -> TableInfo | None:
     return t
 
 
+def fk_options(owner: str, name: str) -> list[dict]:
+    """FK 드롭다운용 옵션 목록. PK 오름차순 정렬.
+
+    반환: [{"value": pk값, "label": "pk — 라벨", "image_path": 경로|None}, ...]
+    - 라벨: PK 제외 VARCHAR2 컬럼(경로 제외) 최대 2개를 " / "로 연결
+    - IMAGE_RESOURCE 참조 시 image_path에 IMAGE_FILE_PATH 포함 (미리보기용)
+    - 복합 PK 테이블은 드롭다운 불가 → 빈 리스트 (폼이 텍스트 입력으로 폴백)
+    """
+    t = get_table(owner, name)
+    if not t:
+        return []
+    pk_cols = t.pk_columns()
+    if len(pk_cols) != 1:
+        return []
+    pk = pk_cols[0].name
+
+    label_cols = [
+        c.name for c in t.columns
+        if c.name != pk and c.data_type in ("VARCHAR2", "CHAR")
+        and not c.name.endswith("_PATH")
+    ][:2]
+
+    wanted = list(dict.fromkeys([pk] + label_cols + (
+        ["IMAGE_FILE_PATH"] if any(c.name == "IMAGE_FILE_PATH" for c in t.columns) else []
+    )))
+    cols_sql = ", ".join(f'"{c}"' for c in wanted)
+    try:
+        rows = db.fetch_all(f'SELECT {cols_sql} FROM "{owner}"."{name}" ORDER BY "{pk}" ASC')
+    except Exception:
+        return []
+
+    opts: list[dict] = []
+    for r in rows[:1000]:
+        parts = [str(r[c]) for c in label_cols if r.get(c) is not None]
+        opts.append({
+            "value": "" if r[pk] is None else r[pk],
+            "label": f"{r[pk]}" + (f" — {' / '.join(parts)}" if parts else ""),
+            "image_path": r.get("IMAGE_FILE_PATH"),
+        })
+    return opts
+
+
 def _attach_columns(tables: list[TableInfo]) -> None:
     owners = [t.owner for t in tables]
     names = [t.name for t in tables]
