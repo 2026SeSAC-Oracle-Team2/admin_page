@@ -37,12 +37,14 @@
       </span>
     </label>
 
-    {% set fk_opts = fk_options.get(c.name) if fk_options is defined else none %}
-    {% if fk_opts %}
+    {% set col_opts = fk_options.get(c.name) if fk_options is defined else none %}
+    {% set first_opt = col_opts[0] if col_opts else none %}
+    {% set is_fk_opts = (first_opt is mapping) if col_opts else false %}
+    {% if col_opts and is_fk_opts %}
       {# FK 드롭다운: 참조 테이블의 행을 ID 오름차순으로 나열 #}
       <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
         {% if c.nullable %}<option value="">— NULL —</option>{% endif %}
-        {% for opt in fk_opts %}
+        {% for opt in col_opts %}
         <option value="{{ opt.value }}"
                 class="{{ 'fk-has-image' if opt.image_path else '' }}"
                 data-image-path="{{ opt.image_path or '' }}"
@@ -73,10 +75,13 @@
       })();
       </script>
       {% endif %}
-    {% elif c.name == 'HINT_TYPE' %}
+    {% elif col_opts and not is_fk_opts %}
+      {# CHECK 제약 IN (...) 드롭다운 — 허용값은 DB 제약에서 자동 추출 #}
       <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
-        <option value="CHOSUNG" {{ 'selected' if values.get(c.name) == 'CHOSUNG' else '' }}>CHOSUNG</option>
-        <option value="ASSOCIATION" {{ 'selected' if values.get(c.name) == 'ASSOCIATION' else '' }}>ASSOCIATION</option>
+        {% if c.nullable %}<option value="">— NULL —</option>{% endif %}
+        {% for v in col_opts %}
+        <option value="{{ v }}" {{ 'selected' if values.get(c.name) == v else '' }}>{{ v }}</option>
+        {% endfor %}
       </select>
     {% elif c.data_type.startswith('TIMESTAMP') or c.data_type == 'DATE' %}
       <input type="datetime-local" id="f-{{ c.name }}" name="{{ c.name }}"
