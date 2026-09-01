@@ -130,6 +130,20 @@ def _fk_options_map(table: meta.TableInfo) -> dict[str, list[dict]]:
     return opts
 
 
+def _form_options(table: meta.TableInfo) -> dict[str, list]:
+    """폼 드롭다운 옵션 통합 맵.
+
+    FK 컬럼 → [{"value","label","image_path"}] (fk_options 결과)
+    CHECK IN 제약 컬럼 → ["A","B",...] 문자열 리스트 (check_options 결과)
+    템플릿은 요소가 dict면 FK 옵션, str이면 CHECK 허용값으로 처리한다.
+    """
+    opts: dict[str, list] = dict(_fk_options_map(table))
+    for col, vals in meta.check_options(table.owner, table.name).items():
+        if col not in opts:  # FK 드롭다운이 우선
+            opts[col] = vals
+    return opts
+
+
 # ---------- 로그인 ----------
 
 @app.get("/login", response_class=HTMLResponse)
@@ -227,7 +241,7 @@ async def row_new_form(request: Request, owner: str, name: str):
         raise HTTPSeeOther("/")
     ctx = base_ctx(request)
     ctx.update(table=table, mode="create", values={}, row_pk_query="",
-               fk_options=_fk_options_map(table))
+               fk_options=_form_options(table))
     return templates.TemplateResponse(request, "row_form.html", ctx)
 
 
@@ -251,7 +265,7 @@ async def row_edit_form(request: Request, owner: str, name: str):
         table=table, mode="edit",
         values={k: _fmt_value(v) for k, v in row.items()},
         pk_query=urlencode([(c.name, _fmt_value(row.get(c.name))) for c in table.pk_columns()]),
-        fk_options=_fk_options_map(table),
+        fk_options=_form_options(table),
     )
     return templates.TemplateResponse(request, "row_form.html", ctx)
 
