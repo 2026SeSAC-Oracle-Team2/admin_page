@@ -2,13 +2,18 @@
 {% block title %}테이블 — SeSAC Admin{% endblock %}
 {% block content %}
 <h1>테이블</h1>
-<div class="table-grid">
-  {% for t in tables %}
-  <a class="table-card" href="/table/{{ t.owner }}/{{ t.name }}">
-    <div class="tc-name">{{ t.name }}</div>
-    <div class="tc-owner muted">{{ t.owner }}</div>
-    <div class="tc-rows">{{ '—' if t.num_rows is none else t.num_rows ~ ' rows' }}</div>
-  </a>
-  {% endfor %}
-</div>
+{% for group in groups %}
+<section class="schema-section">
+  <h2 class="schema-title">{{ group[0] }}</h2>
+  <div class="table-grid">
+    {% for t in group[1] %}
+    <a class="table-card" href="/table/{{ t.owner }}/{{ t.name }}">
+      <div class="tc-name">{{ t.name }}</div>
+      <div class="tc-owner muted">{{ t.owner }}</div>
+      <div class="tc-rows">{{ '—' if t.num_rows is none else t.num_rows ~ ' rows' }}</div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
 {% endblock %}

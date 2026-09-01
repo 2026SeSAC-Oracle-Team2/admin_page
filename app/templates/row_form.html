@@ -10,8 +10,7 @@
 </div>
 
 {# IMAGE_RESOURCE: 파일 입력을 폼에 직접 넣고 enctype=multipart로 제출한다.
-   서버가 INSERT → RETURNING image_id → OCI 업로드 → 경로 UPDATE 순서로 처리.
-   (예전 pending/tmp/move/시퀀스예약 구조는 전부 제거됨) #}
+   서버가 INSERT → RETURNING image_id → OCI 업로드 → 경로 UPDATE 순서로 처리. #}
 {# ★ is_image_resource는 <form> 태그보다 "먼저" 선언돼야 enctype 조건이 동작함 #}
 {% set is_image_resource = (table.name == 'IMAGE_RESOURCE') %}
 <form class="form-card"
@@ -38,7 +37,43 @@
       </span>
     </label>
 
-    {% if c.name == 'HINT_TYPE' %}
+    {% set fk_opts = fk_options.get(c.name) if fk_options is defined else none %}
+    {% if fk_opts %}
+      {# FK 드롭다운: 참조 테이블의 행을 ID 오름차순으로 나열 #}
+      <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
+        {% if c.nullable %}<option value="">— NULL —</option>{% endif %}
+        {% for opt in fk_opts %}
+        <option value="{{ opt.value }}"
+                class="{{ 'fk-has-image' if opt.image_path else '' }}"
+                data-image-path="{{ opt.image_path or '' }}"
+                {{ 'selected' if values.get(c.name) == (opt.value | string) else '' }}>
+          {{ opt.label }}
+        </option>
+        {% endfor %}
+      </select>
+      {% if c.fk_ref and c.fk_ref[1] == 'IMAGE_RESOURCE' %}
+      <img class="fk-image-preview" id="fk-preview-{{ c.name }}" src="" alt=""
+           style="display:none;max-height:120px;margin-top:6px;border-radius:6px;border:1px solid var(--border);">
+      <script>
+      (function() {
+        var sel = document.getElementById('f-{{ c.name }}');
+        var img = document.getElementById('fk-preview-{{ c.name }}');
+        function sync() {
+          var opt = sel.options[sel.selectedIndex];
+          var path = opt ? (opt.getAttribute('data-image-path') || '') : '';
+          if (path) {
+            img.src = '/image-preview?path=' + encodeURIComponent(path);
+            img.style.display = 'block';
+          } else {
+            img.style.display = 'none';
+          }
+        }
+        sel.addEventListener('change', sync);
+        sync();
+      })();
+      </script>
+      {% endif %}
+    {% elif c.name == 'HINT_TYPE' %}
       <select id="f-{{ c.name }}" name="{{ c.name }}" {{ '' if c.nullable else 'required' }}>
         <option value="CHOSUNG" {{ 'selected' if values.get(c.name) == 'CHOSUNG' else '' }}>CHOSUNG</option>
         <option value="ASSOCIATION" {{ 'selected' if values.get(c.name) == 'ASSOCIATION' else '' }}>ASSOCIATION</option>
@@ -71,10 +106,6 @@
     {% if mode == 'edit' and values.get('IMAGE_FILE_PATH') %}
       <div class="hint">새 파일을 선택하지 않으면 기존 이미지({{ values.get('IMAGE_FILE_PATH') }})가 유지됩니다.</div>
     {% endif %}
-    {# 미리보기: create/edit 공용 슬롯.
-       - create: 파일 선택 시 브라우저 로컬 미리보기(URL.createObjectURL)
-       - edit: 기존 이미지(/image-preview PAR)를 먼저 보여주고,
-               새 파일을 선택하면 로컬 미리보기로 교체 #}
     <img id="image-preview-slot"
          src="{{ '/image-preview?path=' + (values.get('IMAGE_FILE_PATH') | urlencode) if values.get('IMAGE_FILE_PATH') else '' }}"
          alt="preview"
@@ -109,9 +140,6 @@
 {% if is_image_resource is defined and is_image_resource %}
 <script>
 (function() {
-  // 이미지 미리보기: 서버 왕복 없이 브라우저에서 즉시 표시.
-  // - create 모드: 슬롯이 display:none 상태로 항상 존재 → 선택 시 채움
-  // - edit 모드: 기존 이미지(PAR) 표시 중 → 새 파일 선택 시 로컬 미리보기로 교체
   const fileInput = document.getElementById('in-image-file');
   const img = document.getElementById('image-preview-slot');
   if (fileInput && img) {
