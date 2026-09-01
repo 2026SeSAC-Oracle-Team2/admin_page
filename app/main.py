@@ -114,6 +114,22 @@ def _collect_form_data(table: meta.TableInfo, form: Any, insertable_only: bool) 
     return data
 
 
+def _fk_options_map(table: meta.TableInfo) -> dict[str, list[dict]]:
+    """행 추가/수정 폼에서 FK 컬럼을 드롭다운으로 렌더링하기 위한 옵션 맵.
+
+    key: 컬럼명(대문자), value: meta.fk_options 결과.
+    옵션을 못 만드는 FK(복합 PK, 조회 실패)는 key 자체를 넣지 않아
+    템플릿이 기존 텍스트 입력으로 폴백한다.
+    """
+    opts: dict[str, list[dict]] = {}
+    for c in table.columns:
+        if c.fk_ref:
+            o = meta.fk_options(c.fk_ref[0], c.fk_ref[1])
+            if o:
+                opts[c.name] = o
+    return opts
+
+
 # ---------- 로그인 ----------
 
 @app.get("/login", response_class=HTMLResponse)
@@ -151,7 +167,15 @@ async def logout():
 async def home(request: Request):
     require_login(request)
     ctx = base_ctx(request)
-    ctx.update(tables=meta.list_tables())
+    # 스키마(owner)별 그룹핑 — list_tables가 owner, table_name 순 정렬이므로 연속 그룹핑로 충분
+    tables = meta.list_tables()
+    groups: list[tuple[str, list[meta.TableInfo]]] = []
+    for t in tables:
+        if groups and groups[-1][0] == t.owner:
+            groups[-1][1].append(t)
+        else:
+            groups.append((t.owner, [t]))
+    ctx.update(groups=groups)
     return templates.TemplateResponse(request, "home.html", ctx)
 
 
@@ -202,7 +226,8 @@ async def row_new_form(request: Request, owner: str, name: str):
     if not table:
         raise HTTPSeeOther("/")
     ctx = base_ctx(request)
-    ctx.update(table=table, mode="create", values={}, row_pk_query="")
+    ctx.update(table=table, mode="create", values={}, row_pk_query="",
+               fk_options=_fk_options_map(table))
     return templates.TemplateResponse(request, "row_form.html", ctx)
 
 
@@ -226,6 +251,7 @@ async def row_edit_form(request: Request, owner: str, name: str):
         table=table, mode="edit",
         values={k: _fmt_value(v) for k, v in row.items()},
         pk_query=urlencode([(c.name, _fmt_value(row.get(c.name))) for c in table.pk_columns()]),
+        fk_options=_fk_options_map(table),
     )
     return templates.TemplateResponse(request, "row_form.html", ctx)
 
