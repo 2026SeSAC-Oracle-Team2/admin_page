@@ -106,8 +106,8 @@
 
   {% if is_image_resource %}
   <div class="field">
-    <label>이미지 파일 <span class="field-meta">필수 (jpg/jpeg/png/webp)</span></label>
-    <input type="file" id="in-image-file" name="__file_image__" accept="image/*" required>
+    <label>이미지 파일 <span class="field-meta">{{ '필수 (jpg/jpeg/png/webp)' if mode == 'create' else '선택 — 미선택 시 기존 유지' }}</span></label>
+    <input type="file" id="in-image-file" name="__file_image__" accept="image/*" {{ 'required' if mode == 'create' else '' }}>
     {% if mode == 'edit' and values.get('IMAGE_FILE_PATH') %}
       <div class="hint">새 파일을 선택하지 않으면 기존 이미지({{ values.get('IMAGE_FILE_PATH') }})가 유지됩니다.</div>
     {% endif %}
@@ -122,15 +122,20 @@
     {% if mode == 'edit' and values.get('IMAGE_TAG_PATH') %}
       <div class="hint">새 파일을 선택하지 않으면 기존 태그({{ values.get('IMAGE_TAG_PATH') }})가 유지됩니다.</div>
     {% elif mode == 'create' %}
-      <div class="hint">태그 내용은 JSON 파일로 관리됩니다 (LLM 팀 생성분 첨부).</div>
+      <div class="hint">태그 내용은 JSON 파일로 관리됩니다 (LLM 팀 생성분 첨부). TAG가 있으면 SELF_TALK용 이미지로 사용됩니다.</div>
     {% endif %}
   </div>
   <div class="field">
-    <label>힌트 JSON <span class="field-meta">선택 (.hint.json)</span></label>
-    <input type="file" id="in-hint-file" name="__file_hint__" accept=".json">
-    {% if mode == 'edit' and values.get('IMAGE_HINT_PATH') %}
-      <div class="hint">새 파일을 선택하지 않으면 기존 힌트({{ values.get('IMAGE_HINT_PATH') }})가 유지됩니다.</div>
-    {% endif %}
+    <label>SEMANTIC_CUE <span class="field-meta">의미단서 — NAMING 힌트 1순위 (선택)</span></label>
+    <input type="text" id="f-SEMANTIC_CUE" name="SEMANTIC_CUE"
+           value="{{ values.get('SEMANTIC_CUE', '') }}"
+           placeholder="예: 컴퓨터를 조작할 때 손에 쥐는 것">
+  </div>
+  <div class="field">
+    <label>ARTICULATORY_CUE <span class="field-meta">조음단서 — NAMING 힌트 2순위 (선택)</span></label>
+    <input type="text" id="f-ARTICULATORY_CUE" name="ARTICULATORY_CUE"
+           value="{{ values.get('ARTICULATORY_CUE', '') }}"
+           placeholder="예: 입을 동그랗게 벌리고 발음합니다">
   </div>
   {% endif %}
 

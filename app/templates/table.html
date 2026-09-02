@@ -46,7 +46,7 @@
           <a target="_blank" href="/image-preview?path={{ row[cn] | urlencode }}" title="미리보기">
             <img src="/image-preview?path={{ row[cn] | urlencode }}" alt="" style="max-height:60px;border-radius:4px;border:1px solid var(--border);">
           </a>
-        {% elif is_image_resource and cn in ('IMAGE_TAG_PATH', 'IMAGE_HINT_PATH') and row[cn] %}
+        {% elif is_image_resource and cn == 'IMAGE_TAG_PATH' and row[cn] %}
           <a class="fk-link" target="_blank" href="/image-preview?path={{ row[cn] | urlencode }}" title="JSON 보기">JSON ↗</a>
         {% else %}
           {{ row[cn] | fmt }}

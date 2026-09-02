@@ -38,17 +38,30 @@ class TableInfo:
         return [c for c in self.columns if c.is_pk]
 
     def insertable_columns(self) -> list[Column]:
-        """INSERT 폼에 나올 컬럼: PK/제외 컬럼 빼고"""
+        """INSERT 폼에 나올 컬럼: PK/identity/timestamp 자동컬럼 제외
+
+        TIMESTAMP 컬럼은 DEFAULT CURRENT_TIMESTAMP 자동 기록이 일반적 —
+        폼에서 빈 값으로 바인딩되면 NOT NULL 위반(ORA-01400) 또는
+        날짜 파싱 오류(ORA-01843)가 나므로 폼에서 아예 제외한다.
+        """
         return [
             c for c in self.columns
-            if not c.is_identity and not (c.is_pk and c.data_type == "NUMBER" and c.data_default is None)
+            if not c.is_identity
+            and not (c.is_pk and c.data_type == "NUMBER" and c.data_default is None)
+            and not c.data_type.startswith("TIMESTAMP")
+            and c.data_type != "DATE"
         ]
 
     def updatable_columns(self) -> list[Column]:
-        """UPDATE 폼에 나올 컬럼: PK/identity 제외, timestamp 자동컬럼 제외"""
+        """UPDATE 폼에 나올 컬럼: PK/identity 제외, timestamp 자동컬럼 제외
+
+        data_type이 'TIMESTAMP(6)'처럼 precision을 붙고 있으므로
+        정확히 'TIMESTAMP'와 비교하면 안 되고 startswith로 판정한다.
+        (TIMESTAMP(6)가 폼에 포함되어 ORA-01843이 나던 버그 수정)
+        """
         return [
             c for c in self.columns
-            if not c.is_identity and not c.is_pk and c.data_type != "TIMESTAMP"
+            if not c.is_identity and not c.is_pk and not c.data_type.startswith("TIMESTAMP")
         ]
 
 

@@ -272,17 +272,16 @@ async def row_edit_form(request: Request, owner: str, name: str):
 
 # ---------- 행 추가/수정/삭제 액션 ----------
 
-_IMAGE_RESOURCE_COLUMNS = ("IMAGE_FILE_PATH", "IMAGE_TAG_PATH", "IMAGE_HINT_PATH")
+_IMAGE_RESOURCE_COLUMNS = ("IMAGE_FILE_PATH", "IMAGE_TAG_PATH")  # ADR-004: IMAGE_HINT_PATH 폐지
 # 폼 필드명(multipart) → (필드명, kind)
 _IMAGE_FILE_FIELDS = {
     "file": ("__file_image__", "IMAGE_FILE_PATH"),
     "tags": ("__file_tags__", "IMAGE_TAG_PATH"),
-    "hint": ("__file_hint__", "IMAGE_HINT_PATH"),
 }
 
 
 def _res_rel_path(image_id: int, kind: str, ext: str) -> str:
-    """OCI 저장 경로 (DB에는 base 미포함으로 저장). kind: file|tags|hint."""
+    """OCI 저장 경로 (DB에는 base 미포함으로 저장). kind: file|tags."""
     suffix = ext if kind == "file" else f"{kind}.json"
     return f"{image_id}/{image_id}.{suffix}"
 
@@ -292,8 +291,9 @@ def _insert_image_row_with_files(form: Any) -> int:
 
     1) 이미지 파일 없으면 즉시 실패 (가짜 행 방지)
     2) INSERT ... RETURNING image_id 로 실제 ID 확보 (ID 부여의 유일한 지점)
+       — 폼의 cue 컬럼(SEMANTIC_CUE/ARTICULATORY_CUE)도 함께 INSERT (P2-37)
     3) 이미지 본문을 OCI 최종 경로에 업로드 (실패 시 행 삭제 후 예외 상향)
-    4) 태그/힌트 파일도 있으면 같이 업로드 — 하나라도 실패하면 전부 롤백
+    4) 태그 파일도 있으면 같이 업로드 — 하나라도 실패하면 전부 롤백
     5) 경로 컬럼 UPDATE
     """
     image_name = str(form.get("IMAGE_NAME", "")).strip()
@@ -307,10 +307,20 @@ def _insert_image_row_with_files(form: Any) -> int:
     if not image_ext:
         raise ValueError("이미지는 jpg/jpeg/png/webp 형식만 지원합니다.")
 
+    # cue 텍스트 (NAMING 힌트 — 의미단서/조음단서, ADR-004)
+    semantic_cue = str(form.get("SEMANTIC_CUE", "") or "").strip() or None
+    articulatory_cue = str(form.get("ARTICULATORY_CUE", "")).strip() or None
+
     image_id = int(db.execute_dml_returning(
-        "INSERT INTO SPEECHAPP_CONTENT.IMAGE_RESOURCE (IMAGE_NAME, IMAGE_FILE_PATH) "
-        "VALUES (:image_name, :file_path) RETURNING IMAGE_ID INTO :out_id",
-        {"image_name": image_name, "file_path": "__uploading__"},
+        "INSERT INTO SPEECHAPP_CONTENT.IMAGE_RESOURCE "
+        "(IMAGE_NAME, IMAGE_FILE_PATH, SEMANTIC_CUE, ARTICULATORY_CUE) "
+        "VALUES (:image_name, :file_path, :sem_cue, :art_cue) RETURNING IMAGE_ID INTO :out_id",
+        {
+            "image_name": image_name,
+            "file_path": "__uploading__",
+            "sem_cue": form.get("SEMANTIC_CUE"),
+            "art_cue": form.get("ARTICULATORY_CUE"),
+        },
         "out_id",
     ))
 
@@ -322,7 +332,7 @@ def _insert_image_row_with_files(form: Any) -> int:
         db.execute_dml("DELETE FROM SPEECHAPP_CONTENT.IMAGE_RESOURCE WHERE IMAGE_ID = :pk", {"pk": image_id})
         raise
 
-    for kind, col in (("tags", "IMAGE_TAG_PATH"), ("hint", "IMAGE_HINT_PATH")):
+    for kind, col in (("tags", "IMAGE_TAG_PATH"),):
         upload = form.get(f"__file_{kind}__")
         if upload is None or not getattr(upload, "filename", None):
             continue
@@ -432,7 +442,7 @@ async def row_update(request: Request, owner: str, name: str):
 def _delete_image_artifacts(row: dict[str, Any]) -> list[str]:
     """IMAGE_RESOURCE 행에 연결된 OCI 객체들을 삭제한다 (base 붙여 전체 키 생성). 실패해도 계속 진행."""
     deleted: list[str] = []
-    for key in ("IMAGE_FILE_PATH", "IMAGE_TAG_PATH", "IMAGE_HINT_PATH"):
+    for key in ("IMAGE_FILE_PATH", "IMAGE_TAG_PATH"):
         rel = row.get(key)
         if not rel:
             continue
