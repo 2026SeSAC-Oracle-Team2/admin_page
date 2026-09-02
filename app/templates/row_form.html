@@ -25,7 +25,7 @@
 
   {% set form_cols = table.insertable_columns() if mode == 'create' else table.updatable_columns() %}
   {% for c in form_cols %}
-  {% set skip_path_col = is_image_resource and c.name in ('IMAGE_FILE_PATH', 'IMAGE_TAG_PATH', 'IMAGE_HINT_PATH') %}
+  {% set skip_path_col = is_image_resource and c.name in ('IMAGE_FILE_PATH', 'IMAGE_TAG_PATH', 'SEMANTIC_CUE', 'ARTICULATORY_CUE') %}
   {% if not skip_path_col %}
   <div class="field">
     <label for="f-{{ c.name }}">
@@ -135,7 +135,7 @@
     <label>ARTICULATORY_CUE <span class="field-meta">조음단서 — NAMING 힌트 2순위 (선택)</span></label>
     <input type="text" id="f-ARTICULATORY_CUE" name="ARTICULATORY_CUE"
            value="{{ values.get('ARTICULATORY_CUE', '') }}"
-           placeholder="예: 입을 동그랗게 벌리고 발음합니다">
+           placeholder="예: ㅈㅈㄱ">
   </div>
   {% endif %}
 
